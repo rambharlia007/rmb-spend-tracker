@@ -2,8 +2,12 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
-  writeBatch
+  setDoc,
+  writeBatch,
+  limit,
+  query
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db } from '@/lib/firebase';
@@ -27,23 +31,43 @@ const DEFAULT_PAYMENT_SOURCES = [
   { name: 'UPI', type: 'upi' as const, last4: null }
 ];
 
+async function seedWorkspaceData(wsId: string) {
+  const catsQ = await getDocs(query(collection(db, 'workspaces', wsId, 'categories'), limit(1)));
+  if (!catsQ.empty) return;
+
+  const batch = writeBatch(db);
+  for (const cat of DEFAULT_CATEGORIES) {
+    const ref = doc(collection(db, 'workspaces', wsId, 'categories'));
+    batch.set(ref, { ...cat, active: true, createdAt: serverTimestamp() });
+  }
+  for (const src of DEFAULT_PAYMENT_SOURCES) {
+    const ref = doc(collection(db, 'workspaces', wsId, 'paymentSources'));
+    batch.set(ref, { ...src, active: true, createdAt: serverTimestamp() });
+  }
+  await batch.commit();
+}
+
 /**
  * Ensure user has a user doc + default workspace. Idempotent.
- * Returns the active workspaceId.
+ * Returns active workspaceId.
+ *
+ * Sequential (not single batch) because Firestore rules evaluate
+ * subcollection writes against pre-commit state — workspace doc
+ * must exist before its children can be checked via get().
  */
 export async function bootstrapUser(user: User): Promise<string> {
   const userRef = doc(db, 'users', user.uid);
   const userSnap = await getDoc(userRef);
 
-  if (userSnap.exists()) {
-    const data = userSnap.data();
-    if (data.currentWorkspaceId) return data.currentWorkspaceId as string;
+  if (userSnap.exists() && userSnap.data().currentWorkspaceId) {
+    const wsId = userSnap.data().currentWorkspaceId as string;
+    await seedWorkspaceData(wsId); // idempotent, handles partial prior bootstrap
+    return wsId;
   }
 
+  // 1. Create workspace doc
   const wsRef = doc(collection(db, 'workspaces'));
-  const batch = writeBatch(db);
-
-  batch.set(wsRef, {
+  await setDoc(wsRef, {
     name: `${user.displayName?.split(' ')[0] ?? 'My'}'s Workspace`,
     ownerUid: user.uid,
     members: [user.uid],
@@ -51,17 +75,8 @@ export async function bootstrapUser(user: User): Promise<string> {
     updatedAt: serverTimestamp()
   });
 
-  for (const cat of DEFAULT_CATEGORIES) {
-    const catRef = doc(collection(db, 'workspaces', wsRef.id, 'categories'));
-    batch.set(catRef, { ...cat, active: true, createdAt: serverTimestamp() });
-  }
-
-  for (const src of DEFAULT_PAYMENT_SOURCES) {
-    const srcRef = doc(collection(db, 'workspaces', wsRef.id, 'paymentSources'));
-    batch.set(srcRef, { ...src, active: true, createdAt: serverTimestamp() });
-  }
-
-  batch.set(userRef, {
+  // 2. Create user doc pointing to workspace
+  await setDoc(userRef, {
     email: user.email,
     displayName: user.displayName ?? '',
     photoURL: user.photoURL,
@@ -69,6 +84,8 @@ export async function bootstrapUser(user: User): Promise<string> {
     createdAt: serverTimestamp()
   });
 
-  await batch.commit();
+  // 3. Seed defaults (now workspace exists, rules will pass)
+  await seedWorkspaceData(wsRef.id);
+
   return wsRef.id;
 }
