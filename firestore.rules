@@ -11,12 +11,19 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(db)/documents/workspaces/$(wsId)).data.members;
     }
 
-    // Users
+    // Users — relaxed read for signed-in (needed for email-based contact lookup)
     match /users/{uid} {
-      allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid;
 
       match /contacts/{contactId} {
         allow read, write: if isSignedIn() && request.auth.uid == uid;
+      }
+
+      // Anyone signed-in can drop an invite; only the owner can read/update/delete
+      match /contactInvites/{id} {
+        allow create: if isSignedIn();
+        allow read, update, delete: if isSignedIn() && request.auth.uid == uid;
       }
     }
 
@@ -52,8 +59,10 @@ service cloud.firestore {
         request.auth.uid in [resource.data.giverUid, resource.data.receiverUid];
       allow create: if isSignedIn() &&
         request.auth.uid == request.resource.data.giverUid;
-      allow update: if isSignedIn() &&
-        request.auth.uid in [resource.data.giverUid, resource.data.receiverUid];
+      allow update: if isSignedIn() && (
+        request.auth.uid in [resource.data.giverUid, resource.data.receiverUid]
+        || (resource.data.receiverUid == null && resource.data.receiverEmail == request.auth.token.email)
+      );
       allow delete: if isSignedIn() &&
         request.auth.uid == resource.data.giverUid;
 

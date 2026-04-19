@@ -1,38 +1,53 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '@/hooks/useAuth';
 import { WorkspaceProvider } from '@/hooks/useWorkspace';
+import { ToastProvider } from '@/hooks/useToast';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import Layout from '@/components/Layout';
 import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
-import Placeholder from '@/pages/Placeholder';
+import Categories from '@/pages/Categories';
+import PaymentSources from '@/pages/PaymentSources';
+import Spends from '@/pages/Spends';
+import Contacts from '@/pages/Contacts';
+import LoansGiven from '@/pages/LoansGiven';
+import LoansTaken from '@/pages/LoansTaken';
+import LoanDetail from '@/pages/LoanDetail';
+import WorkspaceSettings from '@/pages/WorkspaceSettings';
+import ProfileSettings from '@/pages/ProfileSettings';
+import BackupSettings from '@/pages/BackupSettings';
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          element={
-            <ProtectedRoute>
-              <WorkspaceProvider>
-                <Layout />
-              </WorkspaceProvider>
-            </ProtectedRoute>
-          }
-        >
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/spends" element={<Placeholder title="Spends" />} />
-          <Route path="/loans-given" element={<Placeholder title="Loans Given" />} />
-          <Route path="/loans-taken" element={<Placeholder title="Loans Taken" />} />
-          <Route path="/contacts" element={<Placeholder title="Contacts" />} />
-          <Route path="/categories" element={<Placeholder title="Categories" />} />
-          <Route path="/payment-sources" element={<Placeholder title="Payment Sources" />} />
-          <Route path="/settings/workspace" element={<Placeholder title="Workspace Settings" />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Route>
-      </Routes>
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            element={
+              <ProtectedRoute>
+                <WorkspaceProvider>
+                  <Layout />
+                </WorkspaceProvider>
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/spends" element={<Spends />} />
+            <Route path="/loans-given" element={<LoansGiven />} />
+            <Route path="/loans-taken" element={<LoansTaken />} />
+            <Route path="/loan/:id" element={<LoanDetail />} />
+            <Route path="/contacts" element={<Contacts />} />
+            <Route path="/categories" element={<Categories />} />
+            <Route path="/payment-sources" element={<PaymentSources />} />
+            <Route path="/settings/workspace" element={<WorkspaceSettings />} />
+            <Route path="/settings/profile" element={<ProfileSettings />} />
+            <Route path="/settings/backup" element={<BackupSettings />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Route>
+        </Routes>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
