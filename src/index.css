@@ -1,96 +1,63 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 240 10% 98%;
-    --foreground: 224 71% 4%;
-
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
-
-    /* Popover — solid background (fixes transparent dropdown bug) */
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
-
-    /* Primary — Indigo 500 */
-    --primary: 243 75% 59%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 240 5% 94%;
-    --secondary-foreground: 240 6% 25%;
-
-    --muted: 240 5% 94%;
-    --muted-foreground: 240 4% 46%;
-
-    /* Accent — light indigo tint */
-    --accent: 243 75% 96%;
-    --accent-foreground: 243 75% 35%;
-
+    --popover-foreground: 222 47% 11%;
+    --primary: 222 47% 11%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 243 75% 59%;
-
-    --radius: 0.625rem;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 222 47% 11%;
+    --radius: 0.5rem;
   }
 
   .dark {
-    --background: 224 71% 4%;
+    --background: 222 47% 11%;
     --foreground: 210 40% 98%;
-
-    --card: 224 71% 6%;
+    --card: 222 47% 11%;
     --card-foreground: 210 40% 98%;
-
-    --popover: 224 71% 8%;
+    --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
-
-    --primary: 243 75% 65%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 224 71% 10%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
-
-    --muted: 224 71% 10%;
-    --muted-foreground: 215 20% 55%;
-
-    --accent: 243 60% 16%;
-    --accent-foreground: 243 75% 75%;
-
-    --destructive: 0 63% 40%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 224 71% 12%;
-    --input: 224 71% 14%;
-    --ring: 243 75% 65%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 213 27% 84%;
   }
 
   * { @apply border-border; }
-
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
-
-  html { scroll-behavior: smooth; }
 }
 
 @layer utilities {
-  /* PWA safe-area bottom padding */
+  /* PWA safe-area padding */
   .pb-safe {
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
-  }
-  .pb-nav-safe {
-    padding-bottom: calc(4rem + max(0px, env(safe-area-inset-bottom)));
-  }
-  /* Bottom nav height including safe area */
-  .h-nav-safe {
-    height: calc(3.5rem + max(0px, env(safe-area-inset-bottom)));
   }
 }

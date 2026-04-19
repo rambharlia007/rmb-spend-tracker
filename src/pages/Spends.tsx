@@ -107,7 +107,7 @@ export default function Spends() {
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Loading…</div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Receipt} title="No spends" description="Add your first spend to start tracking" action={<Button onClick={() => { setEditing(null); setFormOpen(true); }}>Add spend</Button>} />
+        <EmptyState icon={Receipt} title="No spends" description="Add your first spend to start tracking" />
       ) : (
         <div className="space-y-6">
           {byMonth.map(([month, rows]) => {

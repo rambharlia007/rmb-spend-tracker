@@ -15,7 +15,7 @@ export const SelectTrigger = forwardRef<
     ref={ref}
     className={cn(
       'flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm',
-      'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+      'focus:outline-none focus:ring-1 focus:ring-ring',
       'disabled:cursor-not-allowed disabled:opacity-50',
       'data-[placeholder]:text-muted-foreground',
       className
@@ -37,8 +37,13 @@ export const SelectContent = forwardRef<
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
+      // Force solid background via inline style — avoids stacking context issues inside Dialog/Portal
+      style={{
+        backgroundColor: 'hsl(var(--popover))',
+        color: 'hsl(var(--popover-foreground))',
+      }}
       className={cn(
-        'relative z-[200] min-w-[8rem] rounded-lg border bg-popover text-popover-foreground shadow-lg',
+        'relative z-[9999] min-w-[8rem] overflow-hidden rounded-md border shadow-md',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
@@ -51,9 +56,7 @@ export const SelectContent = forwardRef<
     >
       <SelectPrimitive.Viewport
         className={cn(
-          'p-1',
-          // Scrollable viewport — max height uses available space
-          'overflow-y-auto',
+          'p-1 overflow-y-auto',
           'max-h-[min(20rem,var(--radix-select-content-available-height,20rem))]',
           position === 'popper' && 'w-full min-w-[var(--radix-select-trigger-width)]'
         )}
@@ -72,17 +75,16 @@ export const SelectItem = forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-md py-2 pl-8 pr-3 text-sm outline-none',
+      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none',
       'focus:bg-accent focus:text-accent-foreground',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      'transition-colors',
       className
     )}
     {...props}
   >
-    <span className="absolute left-2.5 flex h-3.5 w-3.5 items-center justify-center">
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
-        <Check className="h-3.5 w-3.5 text-primary" />
+        <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>
     </span>
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
@@ -108,7 +110,7 @@ export const SelectSeparator = forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Separator
     ref={ref}
-    className={cn('-mx-1 my-1 h-px bg-border', className)}
+    className={cn('-mx-1 my-1 h-px bg-muted', className)}
     {...props}
   />
 ));

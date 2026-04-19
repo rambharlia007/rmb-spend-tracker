@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
 import { db } from '@/lib/firebase';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useToast } from '@/hooks/useToast';
@@ -71,9 +72,9 @@ export default function BackupSettings() {
       <div className="rounded-lg border p-4 bg-card space-y-3">
         <h2 className="text-sm font-semibold">Yearly PDF Report</h2>
         <p className="text-xs text-muted-foreground">Export a full year's report with monthly totals and category breakdown. Go to Spends page and use the export button with a custom date range.</p>
-        <a href="/spends" className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors">
+        <Link to="/spends" className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors">
           <FileText className="h-4 w-4" /> Go to Spends
-        </a>
+        </Link>
       </div>
 
       <div className="rounded-lg border border-destructive/30 p-4 bg-card space-y-3">

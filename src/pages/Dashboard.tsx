@@ -6,8 +6,8 @@ import { subscribeSpends } from '@/lib/firestore/spends';
 import { subscribeCategories } from '@/lib/firestore/categories';
 import { subscribeLoansGiven, subscribeLoansReceived } from '@/lib/firestore/loans';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, Receipt, HandCoins, ArrowDownToLine, AlertCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Receipt, AlertCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { Spend, Category, SharedLoan } from '@/types';
 
 function getThisMonthRange() {
@@ -17,12 +17,6 @@ function getThisMonthRange() {
   return { from, to };
 }
 
-const STAT_STYLES = [
-  { iconBg: 'bg-violet-100 dark:bg-violet-900/30', iconColor: 'text-violet-600 dark:text-violet-400', icon: TrendingUp },
-  { iconBg: 'bg-blue-100 dark:bg-blue-900/30', iconColor: 'text-blue-600 dark:text-blue-400', icon: Receipt },
-  { iconBg: 'bg-emerald-100 dark:bg-emerald-900/30', iconColor: 'text-emerald-600 dark:text-emerald-400', icon: HandCoins },
-  { iconBg: 'bg-amber-100 dark:bg-amber-900/30', iconColor: 'text-amber-600 dark:text-amber-400', icon: ArrowDownToLine },
-];
 
 export default function Dashboard() {
   const { workspace } = useWorkspace();
@@ -86,63 +80,54 @@ export default function Dashboard() {
           <span className="flex-1">
             {pendingCount} loan{pendingCount > 1 ? 's' : ''} pending your confirmation.
           </span>
-          <a href="/loans-taken" className="font-semibold underline-offset-2 hover:underline whitespace-nowrap">
+          <Link to="/loans-taken" className="font-semibold underline-offset-2 hover:underline whitespace-nowrap">
             Review →
-          </a>
+          </Link>
         </div>
       )}
 
       {/* Stat cards */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat, i) => {
-          const style = STAT_STYLES[i];
-          const Icon = style.icon;
-          return (
-            <div key={i} className="rounded-xl border bg-card p-4 shadow-sm hover:shadow-md transition-shadow">
-              <div className={cn('h-8 w-8 rounded-lg flex items-center justify-center mb-3', style.iconBg)}>
-                <Icon className={cn('h-4 w-4', style.iconColor)} />
-              </div>
-              <div className="text-xs text-muted-foreground">{stat.sublabel}</div>
-              {stat.value === null ? (
-                <Skeleton className="h-7 w-20 mt-1" />
-              ) : (
-                <div className="text-xl font-bold mt-0.5 tabular-nums leading-tight">{stat.value}</div>
-              )}
-              <div className="text-xs text-muted-foreground mt-0.5">{stat.label}</div>
-            </div>
-          );
-        })}
+        {stats.map((stat, i) => (
+          <div key={i} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="text-xs text-muted-foreground">{stat.sublabel}</div>
+            {stat.value === null ? (
+              <Skeleton className="h-7 w-20 mt-1" />
+            ) : (
+              <div className="text-xl font-bold mt-1 tabular-nums leading-tight">{stat.value}</div>
+            )}
+            <div className="text-xs text-muted-foreground mt-0.5">{stat.label}</div>
+          </div>
+        ))}
       </div>
 
       {/* Recent spends */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold">Recent Spends</h2>
-          <a href="/spends" className="text-xs text-primary hover:underline">View all →</a>
+          <Link to="/spends" className="text-xs text-primary hover:underline">View all →</Link>
         </div>
         {recentSpends === null ? (
           <div className="space-y-2">
-            {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
+            {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
           </div>
         ) : recentSpends.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-8 text-center">
+          <div className="rounded-lg border border-dashed p-8 text-center">
             <Receipt className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No spends yet.</p>
-            <a href="/spends" className="text-sm text-primary hover:underline mt-1 inline-block">Add your first spend →</a>
+            <Link to="/spends" className="text-sm text-primary hover:underline mt-1 inline-block">Add your first spend →</Link>
           </div>
         ) : (
-          <div className="rounded-xl border overflow-hidden divide-y bg-card shadow-sm">
+          <div className="rounded-lg border overflow-hidden divide-y bg-card">
             {recentSpends.map((s) => {
               const cat = catMap.get(s.categoryId);
               return (
-                <div key={s.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+                <div key={s.id} className="flex items-center justify-between px-4 py-3 hover:bg-accent/30 transition-colors">
                   <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center text-lg shrink-0">
-                      {cat?.icon ?? '💸'}
-                    </div>
+                    <span className="text-xl">{cat?.icon ?? '💸'}</span>
                     <div>
-                      <div className="text-sm font-medium leading-tight">{cat?.name ?? 'Unknown'}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
+                      <div className="text-sm font-medium">{cat?.name ?? 'Unknown'}</div>
+                      <div className="text-xs text-muted-foreground">
                         {format(s.date.toDate(), 'dd MMM yyyy')}
                         {s.notes ? ` · ${s.notes}` : ''}
                       </div>
@@ -160,7 +145,7 @@ export default function Dashboard() {
       {monthSpends && monthSpends.length > 0 && (
         <section>
           <h2 className="text-base font-semibold mb-3">This Month by Category</h2>
-          <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className="rounded-lg border bg-card p-4">
             <CategoryBreakdown spends={monthSpends} catMap={catMap} total={monthTotal} />
           </div>
         </section>
