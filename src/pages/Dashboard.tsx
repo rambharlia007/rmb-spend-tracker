@@ -1,45 +1,35 @@
-import { useAuth } from '@/hooks/useAuth';
+import { useWorkspace } from '@/hooks/useWorkspace';
+import { formatINR } from '@/lib/utils';
 
 export default function Dashboard() {
-  const { user, signOut } = useAuth();
+  const { workspace } = useWorkspace();
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <header className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Welcome, {user?.displayName}</p>
-        </div>
-        <button
-          onClick={() => signOut()}
-          className="text-sm px-3 py-1.5 rounded-md border hover:bg-accent"
-        >
-          Sign out
-        </button>
+    <div className="p-6 max-w-6xl mx-auto">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">{workspace?.name}</p>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">This month</div>
-          <div className="text-2xl font-bold mt-1">₹0</div>
-        </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">Loans given</div>
-          <div className="text-2xl font-bold mt-1">₹0</div>
-        </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">Loans taken</div>
-          <div className="text-2xl font-bold mt-1">₹0</div>
-        </div>
-        <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">Pending actions</div>
-          <div className="text-2xl font-bold mt-1">0</div>
-        </div>
+        <StatCard label="This month" value={formatINR(0)} />
+        <StatCard label="Loans given" value={formatINR(0)} />
+        <StatCard label="Loans taken" value={formatINR(0)} />
+        <StatCard label="Pending" value="0" />
       </div>
 
       <div className="mt-8 text-sm text-muted-foreground">
-        Scaffold running. Next: categories, payment sources, spends.
+        Workspace ready. Next: add spends, categories, payment sources.
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border p-4 bg-card">
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="text-2xl font-bold mt-1">{value}</div>
     </div>
   );
 }
