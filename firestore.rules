@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(wsId) {
+      return isSignedIn() &&
+        request.auth.uid in get(/databases/$(db)/documents/workspaces/$(wsId)).data.members;
+    }
+
+    // Users
+    match /users/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+
+      match /contacts/{contactId} {
+        allow read, write: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // Workspaces
+    match /workspaces/{wsId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.members;
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.ownerUid &&
+        request.auth.uid in request.resource.data.members;
+      allow update: if isSignedIn() &&
+        request.auth.uid == resource.data.ownerUid;
+      allow delete: if isSignedIn() &&
+        request.auth.uid == resource.data.ownerUid;
+
+      // Subcollections: members can read/write
+      match /categories/{id} {
+        allow read, write: if isMember(wsId);
+      }
+      match /paymentSources/{id} {
+        allow read, write: if isMember(wsId);
+      }
+      match /spends/{id} {
+        allow read, write: if isMember(wsId);
+      }
+      match /invites/{id} {
+        allow read, write: if isMember(wsId);
+      }
+    }
+
+    // Shared loans — only giver + receiver
+    match /sharedLoans/{loanId} {
+      allow read: if isSignedIn() &&
+        request.auth.uid in [resource.data.giverUid, resource.data.receiverUid];
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.giverUid;
+      allow update: if isSignedIn() &&
+        request.auth.uid in [resource.data.giverUid, resource.data.receiverUid];
+      allow delete: if isSignedIn() &&
+        request.auth.uid == resource.data.giverUid;
+
+      match /repayments/{repId} {
+        allow read, write: if isSignedIn() &&
+          request.auth.uid in [
+            get(/databases/$(db)/documents/sharedLoans/$(loanId)).data.giverUid,
+            get(/databases/$(db)/documents/sharedLoans/$(loanId)).data.receiverUid
+          ];
+      }
+    }
+  }
+}
