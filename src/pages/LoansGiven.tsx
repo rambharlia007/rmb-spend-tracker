@@ -174,7 +174,10 @@ export default function LoansGiven() {
                 <SelectContent>
                   {selectableContacts.length === 0 && <SelectItem value="__none" disabled>No contacts yet — add from Contacts page</SelectItem>}
                   {selectableContacts.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.displayName || c.email}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.displayName || c.email}
+                      {c.status !== 'connected' ? ' (pending)' : ''}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
