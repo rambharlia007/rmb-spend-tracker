@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { useWorkspace } from '@/hooks/useWorkspace';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { subscribeLoansGiven, createLoan, settleLoan } from '@/lib/firestore/loans';
 import { subscribeContacts } from '@/lib/firestore/contacts';
@@ -28,6 +29,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function LoansGiven() {
   const { workspace } = useWorkspace();
+  const { internalId, user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -49,11 +51,20 @@ export default function LoansGiven() {
 
   const wsId = workspace?.id;
 
-  useEffect(() => { return subscribeLoansGiven(setLoans); }, []);
-  useEffect(() => { if (!wsId) return; return subscribePaymentSources(wsId, setSources); }, [wsId]);
-  useEffect(() => { return subscribeContacts(setContacts); }, []);
+  useEffect(() => {
+    if (!internalId) return;
+    return subscribeLoansGiven(internalId, setLoans);
+  }, [internalId]);
 
-  const connectedContacts = contacts.filter((c) => c.status === 'connected');
+  useEffect(() => { if (!wsId) return; return subscribePaymentSources(wsId, setSources); }, [wsId]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeContacts(setContacts);
+  }, [user]);
+
+  // Show all contacts (connected or pending) in loan form — we record the loan regardless
+  const selectableContacts = contacts;
 
   async function handleSave() {
     const amt = parseInt(form.amount, 10);
@@ -62,12 +73,16 @@ export default function LoansGiven() {
       return;
     }
     const contact = contacts.find((c) => c.id === form.receiverContactId);
-    if (!contact) return;
+    if (!contact || !internalId) return;
     setSaving(true);
     try {
       await createLoan({
-        receiverUid: contact.contactUid,
+        giverInternalId: internalId,
+        giverEmail: user?.email ?? '',
+        giverName: user?.displayName ?? '',
+        receiverInternalId: contact.refUserId,
         receiverEmail: contact.email,
+        receiverName: contact.displayName,
         sourceWorkspaceId: wsId!,
         sourcePaymentSourceId: form.sourceId,
         amount: amt,
@@ -142,7 +157,7 @@ export default function LoansGiven() {
         open={!!settleTarget}
         onOpenChange={(o) => { if (!o) setSettleTarget(null); }}
         title="Settle loan"
-        description={`Mark this loan to ${settleTarget?.receiverEmail} as fully settled?`}
+        description={`Mark this loan to ${settleTarget?.receiverName || settleTarget?.receiverEmail} as fully settled?`}
         confirmLabel={settling ? 'Settling…' : 'Settle'}
         onConfirm={handleSettle}
       />
@@ -153,12 +168,12 @@ export default function LoansGiven() {
           <DialogHeader><DialogTitle>New Loan Given</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>To (contact) *</Label>
+              <Label>To *</Label>
               <Select value={form.receiverContactId} onValueChange={(v) => setForm((f) => ({ ...f, receiverContactId: v }))}>
                 <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
                 <SelectContent>
-                  {connectedContacts.length === 0 && <SelectItem value="__none" disabled>No connected contacts</SelectItem>}
-                  {connectedContacts.map((c) => (
+                  {selectableContacts.length === 0 && <SelectItem value="__none" disabled>No contacts yet — add from Contacts page</SelectItem>}
+                  {selectableContacts.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.displayName || c.email}</SelectItem>
                   ))}
                 </SelectContent>
@@ -210,7 +225,7 @@ function LoanList({ loans, onSelect, onSettle, dim }: { loans: SharedLoan[]; onS
             onClick={() => onSelect(l.id)}
             className="flex-1 text-left hover:bg-muted/40 transition-colors rounded-sm pr-2"
           >
-            <div className="text-sm font-medium">{l.receiverEmail}</div>
+            <div className="text-sm font-medium">{l.receiverName || l.receiverEmail}</div>
             <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}{l.notes ? ` · ${l.notes}` : ''}</div>
           </button>
           <div className="flex items-center gap-2">

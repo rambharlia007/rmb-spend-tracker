@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { useWorkspace } from '@/hooks/useWorkspace';
+import { useAuth } from '@/hooks/useAuth';
 import { formatINR } from '@/lib/utils';
 import { subscribeSpends } from '@/lib/firestore/spends';
 import { subscribeCategories } from '@/lib/firestore/categories';
@@ -20,6 +21,7 @@ function getThisMonthRange() {
 
 export default function Dashboard() {
   const { workspace } = useWorkspace();
+  const { internalId } = useAuth();
 
   const [monthSpends, setMonthSpends] = useState<Spend[] | null>(null);
   const [recentSpends, setRecentSpends] = useState<Spend[] | null>(null);
@@ -49,8 +51,14 @@ export default function Dashboard() {
     });
   }, [wsId]);
 
-  useEffect(() => subscribeLoansGiven(setLoansGiven), []);
-  useEffect(() => subscribeLoansReceived(setLoansReceived), []);
+  useEffect(() => {
+    if (!internalId) return;
+    return subscribeLoansGiven(internalId, setLoansGiven);
+  }, [internalId]);
+  useEffect(() => {
+    if (!internalId) return;
+    return subscribeLoansReceived(internalId, setLoansReceived);
+  }, [internalId]);
 
   const monthTotal = monthSpends?.reduce((sum, s) => sum + s.amount, 0) ?? 0;
   const loading = monthSpends === null || recentSpends === null;

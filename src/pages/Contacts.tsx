@@ -4,14 +4,12 @@ import { useToast } from '@/hooks/useToast';
 import {
   subscribeContacts,
   subscribeContactInvites,
-  sendContactInvite,
+  addContact,
   acceptContactInvite,
   declineContactInvite,
   removeContact,
-  addPendingContact,
   type ContactInvite,
 } from '@/lib/firestore/contacts';
-import { findUserByEmail } from '@/lib/firestore/userLookup';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -22,41 +20,52 @@ import type { Contact } from '@/types';
 import { Users, UserPlus, Check, X, Trash2 } from 'lucide-react';
 
 export default function Contacts() {
-  const { user } = useAuth();
+  const { user, internalId } = useAuth();
   const { toast } = useToast();
 
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [invites, setInvites] = useState<ContactInvite[] | null>(null);
   const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
 
-  useEffect(() => subscribeContacts(setContacts), []);
-  useEffect(() => subscribeContactInvites((raw) => setInvites(raw as any)), []);
+  useEffect(() => {
+    if (!user) return;
+    return subscribeContacts(setContacts);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeContactInvites((raw) => setInvites(raw as any));
+  }, [user]);
 
   async function handleAdd() {
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed) return;
-    if (trimmed === user?.email?.toLowerCase()) {
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedName = name.trim();
+    if (!trimmedEmail) return;
+    if (trimmedEmail === user?.email?.toLowerCase()) {
       toast('Cannot add yourself', 'error');
       return;
     }
-    if (contacts?.some((c) => c.email.toLowerCase() === trimmed)) {
-      toast('Contact already exists', 'error');
+    if (contacts?.some((c) => c.email.toLowerCase() === trimmedEmail)) {
+      toast('Contact already added', 'error');
+      return;
+    }
+    if (!internalId) {
+      toast('Still loading, please try again', 'error');
       return;
     }
     setAdding(true);
     try {
-      const profile = await findUserByEmail(trimmed);
-      if (!profile) {
-        await addPendingContact(trimmed);
-        setEmail('');
-        toast('Contact saved. They\'ll connect when they sign up.', 'success');
-        return;
-      }
-      await sendContactInvite(profile);
+      const result = await addContact(trimmedEmail, trimmedName, internalId);
       setEmail('');
-      toast(`Invite sent to ${profile.displayName || profile.email}`, 'success');
+      setName('');
+      if (result === 'invited') {
+        toast(`Invite sent to ${trimmedName || trimmedEmail}`, 'success');
+      } else {
+        toast('Contact saved. They\'ll connect when they sign up.', 'success');
+      }
     } catch (e: any) {
       toast(e.message, 'error');
     } finally {
@@ -65,8 +74,9 @@ export default function Contacts() {
   }
 
   async function handleAccept(invite: ContactInvite) {
+    if (!internalId) return;
     try {
-      await acceptContactInvite(invite as any);
+      await acceptContactInvite(invite, internalId);
       toast(`Connected with ${invite.senderName || invite.senderEmail}`, 'success');
     } catch (e: any) {
       toast(e.message, 'error');
@@ -104,18 +114,27 @@ export default function Contacts() {
       </header>
 
       {/* Add contact */}
-      <div className="flex gap-2">
-        <Input
-          type="email"
-          placeholder="friend@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-          className="flex-1"
-        />
-        <Button onClick={handleAdd} disabled={adding || !email.trim()}>
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <Input
+            type="text"
+            placeholder="Name (optional)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="flex-1"
+          />
+          <Input
+            type="email"
+            placeholder="Email *"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+            className="flex-1"
+          />
+        </div>
+        <Button onClick={handleAdd} disabled={adding || !email.trim()} className="w-full sm:w-auto">
           <UserPlus className="h-4 w-4 mr-1" />
-          {adding ? 'Sending…' : 'Add'}
+          {adding ? 'Saving…' : 'Add Contact'}
         </Button>
       </div>
 

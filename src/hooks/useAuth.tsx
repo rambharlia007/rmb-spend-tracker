@@ -9,21 +9,28 @@ import { auth, googleProvider } from '@/lib/firebase';
 
 type AuthContextValue = {
   user: User | null;
+  internalId: string | null;   // stable FK — use this everywhere instead of user.uid
   loading: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  setInternalId: (id: string) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [internalId, setInternalId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setLoading(false);
+      if (!u) {
+        setInternalId(null);
+        setLoading(false);
+      }
+      // internalId is set by useWorkspace after bootstrap completes
     });
     return unsub;
   }, []);
@@ -33,11 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    setInternalId(null);
     await fbSignOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, internalId, loading, signIn, signOut, setInternalId }}>
       {children}
     </AuthContext.Provider>
   );

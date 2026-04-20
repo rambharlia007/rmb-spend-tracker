@@ -26,7 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function LoanDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { internalId } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -50,7 +50,7 @@ export default function LoanDetail() {
     if (isNaN(amt) || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
     setSaving(true);
     try {
-      await addRepayment(id!, { amount: amt, date: new Date(repForm.date), notes: repForm.notes });
+      await addRepayment(id!, internalId ?? '', { amount: amt, date: new Date(repForm.date), notes: repForm.notes });
       toast('Repayment recorded', 'success');
       setRepOpen(false);
       setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
@@ -67,7 +67,7 @@ export default function LoanDetail() {
   if (loan === 'loading') return <div className="p-6 space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>;
   if (!loan) return <div className="p-6 text-destructive">Loan not found.</div>;
 
-  const isGiver = loan.giverUid === user?.uid;
+  const isGiver = loan.giverInternalId === internalId;
   const totalPaid = repayments.reduce((s, r) => s + r.amount, 0);
 
   return (
@@ -82,7 +82,7 @@ export default function LoanDetail() {
           <div className="text-sm text-muted-foreground">{isGiver ? 'Lent to' : 'Borrowed from'}</div>
           <Badge variant="secondary" className={STATUS_COLORS[loan.status]}>{loan.status}</Badge>
         </div>
-        <div className="font-semibold">{isGiver ? loan.receiverEmail : loan.giverEmail}</div>
+        <div className="font-semibold">{isGiver ? (loan.receiverName || loan.receiverEmail) : (loan.giverName || loan.giverEmail)}</div>
         <div className="text-xs text-muted-foreground">{format(loan.date.toDate(), 'dd MMM yyyy')}{loan.notes ? ` · ${loan.notes}` : ''}</div>
 
         <div className="grid grid-cols-3 gap-2 pt-3 border-t">

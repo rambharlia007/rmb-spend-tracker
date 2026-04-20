@@ -1,10 +1,16 @@
 import type { Timestamp } from 'firebase/firestore';
 
 export type UserDoc = {
+  // internalId = Firestore doc id (stable FK used everywhere)
+  internalId: string;
+  // googleUid = Firebase Auth UID (null until user registers)
+  googleUid: string | null;
   email: string;
   displayName: string;
   photoURL: string | null;
-  currentWorkspaceId: string;
+  isRegistered: boolean;
+  // null until user registers and workspace is created
+  currentWorkspaceId: string | null;
   createdAt: Timestamp;
 };
 
@@ -54,7 +60,8 @@ export type Contact = {
   id: string;
   email: string;
   displayName: string;
-  contactUid: string | null;
+  // internalId of the contact in /users collection (stable FK)
+  refUserId: string | null;
   status: 'pending_signup' | 'invite_sent' | 'connected';
   createdAt: Timestamp;
 };
@@ -63,10 +70,13 @@ export type LoanStatus = 'unconfirmed' | 'accepted' | 'disputed' | 'settled';
 
 export type SharedLoan = {
   id: string;
-  giverUid: string;
+  // internalIds (stable FKs from /users collection)
+  giverInternalId: string;
   giverEmail: string;
-  receiverUid: string | null;
+  giverName: string;
+  receiverInternalId: string | null;
   receiverEmail: string;
+  receiverName: string;
   sourceWorkspaceId: string;
   sourcePaymentSourceId: string;
   amount: number;

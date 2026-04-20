@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { subscribeLoansReceived, acceptLoan, disputeLoan } from '@/lib/firestore/loans';
 import { formatINR } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
@@ -20,10 +21,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function LoansTaken() {
   const { toast } = useToast();
+  const { internalId } = useAuth();
   const navigate = useNavigate();
   const [loans, setLoans] = useState<SharedLoan[] | null>(null);
 
-  useEffect(() => subscribeLoansReceived(setLoans), []);
+  useEffect(() => {
+    if (!internalId) return;
+    return subscribeLoansReceived(internalId, setLoans);
+  }, [internalId]);
 
   async function handleAccept(loanId: string, e: React.MouseEvent) {
     e.stopPropagation();
@@ -84,7 +89,7 @@ export default function LoansTaken() {
                     className="flex items-start justify-between px-4 py-3 bg-card hover:bg-muted/40 transition-colors cursor-pointer"
                   >
                     <div>
-                      <div className="text-sm font-medium">{l.giverEmail}</div>
+                      <div className="text-sm font-medium">{l.giverName || l.giverEmail}</div>
                       <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}{l.notes ? ` · ${l.notes}` : ''}</div>
                       {l.status === 'unconfirmed' && (
                         <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
@@ -120,7 +125,7 @@ export default function LoansTaken() {
                     className="flex items-center justify-between px-4 py-3 bg-card hover:bg-muted/40 transition-colors cursor-pointer"
                   >
                     <div>
-                      <div className="text-sm font-medium">{l.giverEmail}</div>
+                      <div className="text-sm font-medium">{l.giverName || l.giverEmail}</div>
                       <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}</div>
                     </div>
                     <div className="flex items-center gap-2">

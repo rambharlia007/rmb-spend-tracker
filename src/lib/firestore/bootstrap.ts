@@ -1,13 +1,14 @@
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
+  updateDoc,
   writeBatch,
   limit,
-  query
+  query,
+  where,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db } from '@/lib/firebase';
@@ -48,44 +49,98 @@ async function seedWorkspaceData(wsId: string) {
 }
 
 /**
- * Ensure user has a user doc + default workspace. Idempotent.
- * Returns active workspaceId.
- *
- * Sequential (not single batch) because Firestore rules evaluate
- * subcollection writes against pre-commit state — workspace doc
- * must exist before its children can be checked via get().
+ * Find existing /users doc by googleUid field.
+ * Returns { internalId, workspaceId } or null.
  */
-export async function bootstrapUser(user: User): Promise<string> {
-  const userRef = doc(db, 'users', user.uid);
-  const userSnap = await getDoc(userRef);
+async function findUserDocByGoogleUid(googleUid: string) {
+  const q = query(collection(db, 'users'), where('googleUid', '==', googleUid), limit(1));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { internalId: d.id, data: d.data() };
+}
 
-  if (userSnap.exists() && userSnap.data().currentWorkspaceId) {
-    const wsId = userSnap.data().currentWorkspaceId as string;
-    await seedWorkspaceData(wsId); // idempotent, handles partial prior bootstrap
-    return wsId;
+/**
+ * Find existing /users doc by email (may be pre-created by another user adding this email as contact).
+ * Returns doc id (internalId) or null.
+ */
+async function findUserDocByEmail(email: string) {
+  const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase()), limit(1));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { internalId: d.id, data: d.data() };
+}
+
+/**
+ * Bootstrap user on sign-in. Uses internalId as stable FK (not googleUid).
+ *
+ * Logic:
+ * 1. Check if /users doc with googleUid already exists → already bootstrapped
+ * 2. Check if /users doc with same email exists (pre-created as pending_signup contact)
+ *    → update that doc with googleUid, isRegistered: true, create workspace
+ * 3. Neither → create fresh /users doc with new internalId
+ *
+ * Returns { internalId, workspaceId }
+ */
+export async function bootstrapUser(user: User): Promise<{ internalId: string; workspaceId: string }> {
+  // 1. Already registered? (has googleUid field)
+  const byGoogleUid = await findUserDocByGoogleUid(user.uid);
+  if (byGoogleUid) {
+    const wsId = byGoogleUid.data.currentWorkspaceId as string;
+    await seedWorkspaceData(wsId);
+    return { internalId: byGoogleUid.internalId, workspaceId: wsId };
   }
 
-  // 1. Create workspace doc
+  // 2. Pre-created stub by another user (pending_signup)?
+  const byEmail = await findUserDocByEmail(user.email ?? '');
+
+  let internalId: string;
+  let userRef;
+
+  if (byEmail && !byEmail.data.isRegistered) {
+    // Reuse the existing doc — internalId stays the same (FK integrity maintained)
+    internalId = byEmail.internalId;
+    userRef = doc(db, 'users', internalId);
+  } else {
+    // Fresh user — generate new internalId
+    userRef = doc(collection(db, 'users'));
+    internalId = userRef.id;
+  }
+
+  // Create workspace
   const wsRef = doc(collection(db, 'workspaces'));
   await setDoc(wsRef, {
     name: `${user.displayName?.split(' ')[0] ?? 'My'}'s Workspace`,
-    ownerUid: user.uid,
-    members: [user.uid],
+    ownerUid: internalId,   // use internalId, not googleUid
+    members: [internalId],
     createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   });
 
-  // 2. Create user doc pointing to workspace
-  await setDoc(userRef, {
-    email: user.email,
-    displayName: user.displayName ?? '',
-    photoURL: user.photoURL,
-    currentWorkspaceId: wsRef.id,
-    createdAt: serverTimestamp()
-  });
+  if (byEmail && !byEmail.data.isRegistered) {
+    // Update existing stub doc
+    await updateDoc(userRef, {
+      googleUid: user.uid,
+      displayName: user.displayName ?? byEmail.data.displayName ?? '',
+      photoURL: user.photoURL ?? null,
+      isRegistered: true,
+      currentWorkspaceId: wsRef.id,
+    });
+  } else {
+    // Create fresh doc
+    await setDoc(userRef, {
+      internalId,
+      googleUid: user.uid,
+      email: (user.email ?? '').toLowerCase(),
+      displayName: user.displayName ?? '',
+      photoURL: user.photoURL ?? null,
+      isRegistered: true,
+      currentWorkspaceId: wsRef.id,
+      createdAt: serverTimestamp(),
+    });
+  }
 
-  // 3. Seed defaults (now workspace exists, rules will pass)
   await seedWorkspaceData(wsRef.id);
-
-  return wsRef.id;
+  return { internalId, workspaceId: wsRef.id };
 }

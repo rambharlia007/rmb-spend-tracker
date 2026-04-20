@@ -15,7 +15,7 @@ type WorkspaceContextValue = {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, setInternalId } = useAuth();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,8 +34,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     bootstrapUser(user)
-      .then((wsId) => {
-        if (!cancelled) setWorkspaceId(wsId);
+      .then(({ internalId, workspaceId: wsId }) => {
+        if (!cancelled) {
+          setInternalId(internalId);
+          setWorkspaceId(wsId);
+        }
       })
       .catch((e) => {
         if (!cancelled) {

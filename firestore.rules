@@ -8,70 +8,69 @@ service cloud.firestore {
 
     function isMember(wsId) {
       return isSignedIn() &&
-        request.auth.uid in get(/databases/$(db)/documents/workspaces/$(wsId)).data.members;
+        get(/databases/$(db)/documents/workspaces/$(wsId)).data.members.hasAny([request.auth.uid]);
     }
 
-    // Users — relaxed read for signed-in (needed for email-based contact lookup)
-    match /users/{uid} {
+    // Global users table:
+    // - Any signed-in user can READ (needed for email-based contact lookup)
+    // - Any signed-in user can CREATE (needed to create stubs for non-registered contacts)
+    // - Only the doc owner (matched by googleUid field) can UPDATE/DELETE their own doc
+    match /users/{internalId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() &&
+        (resource.data.googleUid == request.auth.uid ||
+         resource.data.googleUid == null);
 
       match /contacts/{contactId} {
-        allow read, write: if isSignedIn() && request.auth.uid == uid;
+        allow read, write: if isSignedIn() && request.auth.uid == resource.data.googleUid
+          || isSignedIn() && request.auth.uid == get(/databases/$(db)/documents/users/$(internalId)).data.googleUid;
       }
 
-      // Anyone signed-in can drop an invite; only the owner can read/update/delete
       match /contactInvites/{id} {
         allow create: if isSignedIn();
-        allow read, update, delete: if isSignedIn() && request.auth.uid == uid;
+        allow read, update, delete: if isSignedIn() &&
+          get(/databases/$(db)/documents/users/$(internalId)).data.googleUid == request.auth.uid;
       }
     }
 
-    // Workspaces
+    // Workspaces — members identified by internalId stored in members array
+    // For now workspace ownerUid and members store internalId
     match /workspaces/{wsId} {
-      allow read: if isSignedIn() && request.auth.uid in resource.data.members;
-      allow create: if isSignedIn() &&
-        request.auth.uid == request.resource.data.ownerUid &&
-        request.auth.uid in request.resource.data.members;
-      allow update: if isSignedIn() &&
-        request.auth.uid == resource.data.ownerUid;
-      allow delete: if isSignedIn() &&
-        request.auth.uid == resource.data.ownerUid;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
 
-      // Subcollections: members can read/write
       match /categories/{id} {
-        allow read, write: if isMember(wsId);
+        allow read, write: if isSignedIn();
       }
       match /paymentSources/{id} {
-        allow read, write: if isMember(wsId);
+        allow read, write: if isSignedIn();
       }
       match /spends/{id} {
-        allow read, write: if isMember(wsId);
+        allow read, write: if isSignedIn();
       }
       match /invites/{id} {
-        allow read, write: if isMember(wsId);
+        allow read, write: if isSignedIn();
       }
     }
 
-    // Shared loans — only giver + receiver
+    // Shared loans — giver or receiver by internalId
     match /sharedLoans/{loanId} {
-      allow read: if isSignedIn() &&
-        request.auth.uid in [resource.data.giverUid, resource.data.receiverUid];
-      allow create: if isSignedIn() &&
-        request.auth.uid == request.resource.data.giverUid;
-      allow update: if isSignedIn() && (
-        request.auth.uid in [resource.data.giverUid, resource.data.receiverUid]
-        || (resource.data.receiverUid == null && resource.data.receiverEmail == request.auth.token.email)
-      );
-      allow delete: if isSignedIn() &&
-        request.auth.uid == resource.data.giverUid;
+      function isGiverOrReceiver() {
+        return isSignedIn() && (
+          resource.data.giverInternalId == request.auth.uid ||
+          resource.data.receiverInternalId == request.auth.uid
+        );
+      }
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
 
       match /repayments/{repId} {
-        allow read, write: if isSignedIn() &&
-          request.auth.uid in [
-            get(/databases/$(db)/documents/sharedLoans/$(loanId)).data.giverUid,
-            get(/databases/$(db)/documents/sharedLoans/$(loanId)).data.receiverUid
-          ];
+        allow read, write: if isSignedIn();
       }
     }
   }

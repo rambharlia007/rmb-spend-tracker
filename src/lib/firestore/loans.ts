@@ -18,18 +18,16 @@ export type Repayment = {
   amount: number;
   date: Timestamp;
   notes: string;
-  paidByUid: string;
+  paidByInternalId: string;
   confirmedByGiver: boolean;
   createdAt: Timestamp;
 };
 
-// --- Subscribe loans given (I am giver) ---
-export function subscribeLoansGiven(cb: (items: SharedLoan[]) => void) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return () => {};
+// --- Subscribe loans given (I am giver, matched by internalId) ---
+export function subscribeLoansGiven(myInternalId: string, cb: (items: SharedLoan[]) => void) {
   const q = query(
     collection(db, 'sharedLoans'),
-    where('giverUid', '==', uid),
+    where('giverInternalId', '==', myInternalId),
     orderBy('createdAt', 'desc')
   );
   return onSnapshot(q, (snap) => {
@@ -37,13 +35,11 @@ export function subscribeLoansGiven(cb: (items: SharedLoan[]) => void) {
   });
 }
 
-// --- Subscribe loans taken (I am receiver) ---
-export function subscribeLoansReceived(cb: (items: SharedLoan[]) => void) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return () => {};
+// --- Subscribe loans received (I am receiver, matched by internalId) ---
+export function subscribeLoansReceived(myInternalId: string, cb: (items: SharedLoan[]) => void) {
   const q = query(
     collection(db, 'sharedLoans'),
-    where('receiverUid', '==', uid),
+    where('receiverInternalId', '==', myInternalId),
     orderBy('createdAt', 'desc')
   );
   return onSnapshot(q, (snap) => {
@@ -64,8 +60,12 @@ export function subscribeRepayments(loanId: string, cb: (items: Repayment[]) => 
 
 // --- Create loan ---
 export async function createLoan(data: {
-  receiverUid: string | null;
+  giverInternalId: string;
+  giverEmail: string;
+  giverName: string;
+  receiverInternalId: string | null;
   receiverEmail: string;
+  receiverName: string;
   sourceWorkspaceId: string;
   sourcePaymentSourceId: string;
   amount: number;
@@ -77,10 +77,12 @@ export async function createLoan(data: {
   const ref = doc(collection(db, 'sharedLoans'));
   await runTransaction(db, async (tx) => {
     tx.set(ref, {
-      giverUid: me.uid,
-      giverEmail: me.email ?? '',
-      receiverUid: data.receiverUid,
+      giverInternalId: data.giverInternalId,
+      giverEmail: data.giverEmail,
+      giverName: data.giverName,
+      receiverInternalId: data.receiverInternalId,
       receiverEmail: data.receiverEmail,
+      receiverName: data.receiverName,
       sourceWorkspaceId: data.sourceWorkspaceId,
       sourcePaymentSourceId: data.sourcePaymentSourceId,
       amount: data.amount,
@@ -88,7 +90,7 @@ export async function createLoan(data: {
       notes: data.notes,
       status: 'unconfirmed' as LoanStatus,
       outstandingAmount: data.amount,
-      createdBy: me.uid,
+      createdBy: data.giverInternalId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -124,6 +126,7 @@ export async function settleLoan(loanId: string) {
 // --- Add repayment (transaction: decrement outstanding, settle if 0) ---
 export async function addRepayment(
   loanId: string,
+  myInternalId: string,
   data: { amount: number; date: Date; notes: string }
 ) {
   const me = auth.currentUser;
@@ -142,7 +145,7 @@ export async function addRepayment(
       amount: data.amount,
       date: Timestamp.fromDate(data.date),
       notes: data.notes,
-      paidByUid: me.uid,
+      paidByInternalId: myInternalId,
       confirmedByGiver: false,
       createdAt: serverTimestamp(),
     });
