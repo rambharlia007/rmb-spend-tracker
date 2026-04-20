@@ -81,18 +81,27 @@ export default function LoansTaken() {
                 <h2 className="text-sm font-semibold">Outstanding</h2>
                 <span className="text-sm font-semibold tabular-nums">{formatINR(totalOutstanding)}</span>
               </div>
-              <div className="divide-y rounded-lg border overflow-hidden">
+              <div className="space-y-2">
                 {activeLoans.map((l) => (
                   <div
                     key={l.id}
+                    className="rounded-lg border bg-card px-4 py-3 cursor-pointer"
                     onClick={() => navigate(`/loan/${l.id}`)}
-                    className="flex items-start justify-between px-4 py-3 bg-card hover:bg-muted/40 transition-colors cursor-pointer"
                   >
-                    <div>
-                      <div className="text-sm font-medium">{l.giverName || l.giverEmail}</div>
-                      <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}{l.notes ? ` · ${l.notes}` : ''}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium text-sm truncate">{l.giverName || l.giverEmail}</div>
+                      <div className="text-sm font-semibold tabular-nums shrink-0">{formatINR(l.outstandingAmount)}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {format(l.date.toDate(), 'dd MMM yyyy')}{l.notes ? ` · ${l.notes}` : ''}
+                    </div>
+                    {l.outstandingAmount !== l.amount && (
+                      <div className="text-xs text-muted-foreground">of {formatINR(l.amount)}</div>
+                    )}
+                    <div className="flex items-center justify-between mt-2">
+                      <Badge variant="secondary" className={STATUS_COLORS[l.status]}>{l.status}</Badge>
                       {l.status === 'unconfirmed' && (
-                        <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" onClick={(e) => handleAccept(l.id, e)}>
                             <Check className="h-3 w-3 mr-1" /> Accept
                           </Button>
@@ -102,13 +111,6 @@ export default function LoansTaken() {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className={STATUS_COLORS[l.status]}>{l.status}</Badge>
-                      <div className="text-sm font-semibold tabular-nums text-right">
-                        <div>{formatINR(l.outstandingAmount)}</div>
-                        {l.outstandingAmount !== l.amount && <div className="text-xs text-muted-foreground">of {formatINR(l.amount)}</div>}
-                      </div>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -117,20 +119,20 @@ export default function LoansTaken() {
           {settledLoans.length > 0 && (
             <section>
               <h2 className="text-sm font-semibold mb-2 text-muted-foreground">Settled</h2>
-              <div className="divide-y rounded-lg border overflow-hidden opacity-60">
+              <div className="space-y-2 opacity-60">
                 {settledLoans.map((l) => (
                   <div
                     key={l.id}
                     onClick={() => navigate(`/loan/${l.id}`)}
-                    className="flex items-center justify-between px-4 py-3 bg-card hover:bg-muted/40 transition-colors cursor-pointer"
+                    className="rounded-lg border bg-card px-4 py-3 cursor-pointer"
                   >
-                    <div>
-                      <div className="text-sm font-medium">{l.giverName || l.giverEmail}</div>
-                      <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium truncate">{l.giverName || l.giverEmail}</div>
+                      <span className="text-sm tabular-nums shrink-0">{formatINR(l.amount)}</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between mt-2">
+                      <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}</div>
                       <Badge variant="secondary" className={STATUS_COLORS[l.status]}>settled</Badge>
-                      <span className="text-sm tabular-nums">{formatINR(l.amount)}</span>
                     </div>
                   </div>
                 ))}

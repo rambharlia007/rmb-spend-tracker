@@ -128,13 +128,14 @@ export default function Spends() {
                           <span>{cat?.icon ?? '📦'}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium flex items-center gap-2 flex-wrap">
+                          <div className="font-medium text-sm flex items-center gap-1 flex-wrap">
                             <span>{cat?.name ?? '—'}</span>
-                            <span className="text-xs text-muted-foreground font-normal">· {src?.name ?? '—'}{src?.last4 && ` ••${src.last4}`}</span>
+                            {src && <span className="text-xs text-muted-foreground font-normal">· {src.name}{src.last4 && ` ••${src.last4}`}</span>}
                           </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {format(s.date.toDate(), 'dd MMM yyyy')}{s.notes && ` · ${s.notes}`}
+                          <div className="text-xs text-muted-foreground">
+                            {format(s.date.toDate(), 'dd MMM yyyy')}
                           </div>
+                          {s.notes ? <div className="text-xs text-muted-foreground">{s.notes}</div> : null}
                         </div>
                         <div className="font-semibold tabular-nums">{formatINR(s.amount)}</div>
                         <Button variant="ghost" size="icon" onClick={() => { setEditing(s); setFormOpen(true); }}><Pencil className="h-4 w-4" /></Button>

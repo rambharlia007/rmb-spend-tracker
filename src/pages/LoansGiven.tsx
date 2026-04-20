@@ -225,27 +225,38 @@ export default function LoansGiven() {
 
 function LoanList({ loans, onSelect, onSettle, dim }: { loans: SharedLoan[]; onSelect: (id: string) => void; onSettle?: (l: SharedLoan) => void; dim?: boolean }) {
   return (
-    <div className="divide-y rounded-lg border overflow-hidden">
+    <div className="space-y-2">
       {loans.map((l) => (
         <div
           key={l.id}
-          className={`w-full flex items-center justify-between px-4 py-3 bg-card ${dim ? 'opacity-60' : ''}`}
+          className={`rounded-lg border bg-card px-4 py-3 ${dim ? 'opacity-60' : ''}`}
         >
+          {/* Top row: name + amount */}
           <button
             onClick={() => onSelect(l.id)}
-            className="flex-1 text-left hover:bg-muted/40 transition-colors rounded-sm pr-2"
+            className="w-full text-left"
           >
-            <div className="text-sm font-medium">{l.receiverName || l.receiverEmail}</div>
-            <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}{l.notes ? ` · ${l.notes}` : ''}</div>
-          </button>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className={STATUS_COLORS[l.status]}>{l.status}</Badge>
-            <div className="text-sm font-semibold tabular-nums text-right">
-              <div>{formatINR(l.outstandingAmount)}</div>
-              {l.outstandingAmount !== l.amount && <div className="text-xs text-muted-foreground">of {formatINR(l.amount)}</div>}
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium text-sm truncate">{l.receiverName || l.receiverEmail}</div>
+              <div className="text-sm font-semibold tabular-nums shrink-0">{formatINR(l.outstandingAmount)}</div>
             </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              {format(l.date.toDate(), 'dd MMM yyyy')}{l.notes ? ` · ${l.notes}` : ''}
+            </div>
+            {l.outstandingAmount !== l.amount && (
+              <div className="text-xs text-muted-foreground">of {formatINR(l.amount)}</div>
+            )}
+          </button>
+          {/* Bottom row: badge + settle */}
+          <div className="flex items-center justify-between mt-2">
+            <Badge variant="secondary" className={STATUS_COLORS[l.status]}>{l.status}</Badge>
             {onSettle && (
-              <Button size="sm" variant="outline" onClick={() => onSettle(l)}>Settle</Button>
+              <button
+                onClick={() => onSettle(l)}
+                className="text-xs font-medium text-primary underline underline-offset-2"
+              >
+                Mark settled
+              </button>
             )}
           </div>
         </div>
