@@ -26,11 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (!u) {
-        setInternalId(null);
-        setLoading(false);
-      }
-      // internalId is set by useWorkspace after bootstrap completes
+      if (!u) setInternalId(null);
+      setLoading(false);
     });
     return unsub;
   }, []);
