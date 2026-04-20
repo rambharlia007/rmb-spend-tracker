@@ -9,6 +9,7 @@ import {
   orderBy,
   runTransaction,
   updateDoc,
+  setDoc,
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import type { SharedLoan, LoanStatus } from '@/types';
@@ -75,25 +76,23 @@ export async function createLoan(data: {
   const me = auth.currentUser;
   if (!me) throw new Error('Not signed in');
   const ref = doc(collection(db, 'sharedLoans'));
-  await runTransaction(db, async (tx) => {
-    tx.set(ref, {
-      giverInternalId: data.giverInternalId,
-      giverEmail: data.giverEmail,
-      giverName: data.giverName,
-      receiverInternalId: data.receiverInternalId,
-      receiverEmail: data.receiverEmail,
-      receiverName: data.receiverName,
-      sourceWorkspaceId: data.sourceWorkspaceId,
-      sourcePaymentSourceId: data.sourcePaymentSourceId,
-      amount: data.amount,
-      date: Timestamp.fromDate(data.date),
-      notes: data.notes,
-      status: 'unconfirmed' as LoanStatus,
-      outstandingAmount: data.amount,
-      createdBy: data.giverInternalId,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  await setDoc(ref, {
+    giverInternalId: data.giverInternalId,
+    giverEmail: data.giverEmail,
+    giverName: data.giverName,
+    receiverInternalId: data.receiverInternalId,
+    receiverEmail: data.receiverEmail,
+    receiverName: data.receiverName,
+    sourceWorkspaceId: data.sourceWorkspaceId,
+    sourcePaymentSourceId: data.sourcePaymentSourceId,
+    amount: data.amount,
+    date: Timestamp.fromDate(data.date),
+    notes: data.notes,
+    status: 'unconfirmed' as LoanStatus,
+    outstandingAmount: data.amount,
+    createdBy: data.giverInternalId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
   return ref.id;
 }
