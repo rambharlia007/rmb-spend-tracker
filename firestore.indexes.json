@@ -20,18 +20,16 @@
       "collectionGroup": "sharedLoans",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "giverUid", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "DESCENDING" }
+        { "fieldPath": "giverInternalId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "sharedLoans",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "receiverUid", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "date", "order": "DESCENDING" }
+        { "fieldPath": "receiverInternalId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],

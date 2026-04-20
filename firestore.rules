@@ -23,8 +23,8 @@ service cloud.firestore {
          resource.data.googleUid == null);
 
       match /contacts/{contactId} {
-        allow read, write: if isSignedIn() && request.auth.uid == resource.data.googleUid
-          || isSignedIn() && request.auth.uid == get(/databases/$(db)/documents/users/$(internalId)).data.googleUid;
+        allow read, write: if isSignedIn() &&
+          get(/databases/$(db)/documents/users/$(internalId)).data.googleUid == request.auth.uid;
       }
 
       match /contactInvites/{id} {
