@@ -80,7 +80,7 @@ export async function createLoan(data: {
     giverInternalId: data.giverInternalId,
     giverEmail: data.giverEmail,
     giverName: data.giverName,
-    receiverInternalId: data.receiverInternalId,
+    receiverInternalId: data.receiverInternalId ?? null,
     receiverEmail: data.receiverEmail,
     receiverName: data.receiverName,
     sourceWorkspaceId: data.sourceWorkspaceId,

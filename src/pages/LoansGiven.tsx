@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { subscribeLoansGiven, createLoan, settleLoan } from '@/lib/firestore/loans';
 import { subscribeContacts } from '@/lib/firestore/contacts';
+import { findUserByEmail } from '@/lib/firestore/userLookup';
 import { subscribePaymentSources } from '@/lib/firestore/paymentSources';
 import { formatINR } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
@@ -76,11 +77,17 @@ export default function LoansGiven() {
     if (!contact || !internalId) return;
     setSaving(true);
     try {
+      // refUserId may be missing on old contact docs — look up by email
+      let receiverInternalId = contact.refUserId ?? null;
+      if (!receiverInternalId) {
+        const profile = await findUserByEmail(contact.email);
+        receiverInternalId = profile?.internalId ?? null;
+      }
       await createLoan({
         giverInternalId: internalId,
         giverEmail: user?.email ?? '',
         giverName: user?.displayName ?? '',
-        receiverInternalId: contact.refUserId,
+        receiverInternalId,
         receiverEmail: contact.email,
         receiverName: contact.displayName,
         sourceWorkspaceId: wsId!,
