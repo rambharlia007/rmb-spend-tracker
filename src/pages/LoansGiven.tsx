@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useToast } from '@/hooks/useToast';
-import { subscribeLoansGiven, createLoan } from '@/lib/firestore/loans';
+import { subscribeLoansGiven, createLoan, settleLoan } from '@/lib/firestore/loans';
 import { subscribeContacts } from '@/lib/firestore/contacts';
 import { subscribePaymentSources } from '@/lib/firestore/paymentSources';
 import { formatINR } from '@/lib/utils';
@@ -17,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { HandCoins, Plus } from 'lucide-react';
 import type { SharedLoan, Contact, PaymentSource } from '@/types';
 import { useNavigate } from 'react-router-dom';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const STATUS_COLORS: Record<string, string> = {
   unconfirmed: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30',
@@ -35,6 +36,8 @@ export default function LoansGiven() {
   const [sources, setSources] = useState<PaymentSource[]>([]);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [settleTarget, setSettleTarget] = useState<SharedLoan | null>(null);
+  const [settling, setSettling] = useState(false);
 
   const [form, setForm] = useState({
     receiverContactId: '',
@@ -81,6 +84,20 @@ export default function LoansGiven() {
     }
   }
 
+  async function handleSettle() {
+    if (!settleTarget) return;
+    setSettling(true);
+    try {
+      await settleLoan(settleTarget.id);
+      toast('Loan marked as settled', 'success');
+    } catch (e: any) {
+      toast(e.message, 'error');
+    } finally {
+      setSettling(false);
+      setSettleTarget(null);
+    }
+  }
+
   const activeLoans = loans?.filter((l) => l.status !== 'settled') ?? [];
   const settledLoans = loans?.filter((l) => l.status === 'settled') ?? [];
   const totalOutstanding = activeLoans.reduce((s, l) => s + l.outstandingAmount, 0);
@@ -109,7 +126,7 @@ export default function LoansGiven() {
                 <h2 className="text-sm font-semibold">Outstanding</h2>
                 <span className="text-sm font-semibold tabular-nums">{formatINR(totalOutstanding)}</span>
               </div>
-              <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} />
+              <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} onSettle={(l) => setSettleTarget(l)} />
             </section>
           )}
           {settledLoans.length > 0 && (
@@ -120,6 +137,15 @@ export default function LoansGiven() {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={!!settleTarget}
+        onOpenChange={(o) => { if (!o) setSettleTarget(null); }}
+        title="Settle loan"
+        description={`Mark this loan to ${settleTarget?.receiverEmail} as fully settled?`}
+        confirmLabel={settling ? 'Settling…' : 'Settle'}
+        onConfirm={handleSettle}
+      />
 
       {/* New loan dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -172,27 +198,32 @@ export default function LoansGiven() {
   );
 }
 
-function LoanList({ loans, onSelect, dim }: { loans: SharedLoan[]; onSelect: (id: string) => void; dim?: boolean }) {
+function LoanList({ loans, onSelect, onSettle, dim }: { loans: SharedLoan[]; onSelect: (id: string) => void; onSettle?: (l: SharedLoan) => void; dim?: boolean }) {
   return (
     <div className="divide-y rounded-lg border overflow-hidden">
       {loans.map((l) => (
-        <button
+        <div
           key={l.id}
-          onClick={() => onSelect(l.id)}
-          className={`w-full flex items-center justify-between px-4 py-3 bg-card hover:bg-muted/40 transition-colors text-left ${dim ? 'opacity-60' : ''}`}
+          className={`w-full flex items-center justify-between px-4 py-3 bg-card ${dim ? 'opacity-60' : ''}`}
         >
-          <div>
+          <button
+            onClick={() => onSelect(l.id)}
+            className="flex-1 text-left hover:bg-muted/40 transition-colors rounded-sm pr-2"
+          >
             <div className="text-sm font-medium">{l.receiverEmail}</div>
             <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}{l.notes ? ` · ${l.notes}` : ''}</div>
-          </div>
+          </button>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className={STATUS_COLORS[l.status]}>{l.status}</Badge>
             <div className="text-sm font-semibold tabular-nums text-right">
               <div>{formatINR(l.outstandingAmount)}</div>
               {l.outstandingAmount !== l.amount && <div className="text-xs text-muted-foreground">of {formatINR(l.amount)}</div>}
             </div>
+            {onSettle && (
+              <Button size="sm" variant="outline" onClick={() => onSettle(l)}>Settle</Button>
+            )}
           </div>
-        </button>
+        </div>
       ))}
     </div>
   );

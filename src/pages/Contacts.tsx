@@ -8,6 +8,7 @@ import {
   acceptContactInvite,
   declineContactInvite,
   removeContact,
+  addPendingContact,
   type ContactInvite,
 } from '@/lib/firestore/contacts';
 import { findUserByEmail } from '@/lib/firestore/userLookup';
@@ -48,7 +49,9 @@ export default function Contacts() {
     try {
       const profile = await findUserByEmail(trimmed);
       if (!profile) {
-        toast('No account found with that email', 'error');
+        await addPendingContact(trimmed);
+        setEmail('');
+        toast('Contact saved. They\'ll connect when they sign up.', 'success');
         return;
       }
       await sendContactInvite(profile);

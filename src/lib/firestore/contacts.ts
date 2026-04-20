@@ -115,6 +115,21 @@ export async function declineContactInvite(inviteId: string) {
   await deleteDoc(doc(db, 'users', uid, 'contactInvites', inviteId));
 }
 
+// --- Add pending contact (user not yet registered) ---
+
+export async function addPendingContact(email: string) {
+  const me = auth.currentUser;
+  if (!me) throw new Error('Not signed in');
+  const myContactRef = doc(collection(db, 'users', me.uid, 'contacts'));
+  await setDoc(myContactRef, {
+    email,
+    displayName: email,
+    contactUid: null,
+    status: 'pending_signup',
+    createdAt: serverTimestamp(),
+  });
+}
+
 // --- Remove contact ---
 
 export async function removeContact(contactId: string) {

@@ -112,6 +112,15 @@ export async function disputeLoan(loanId: string) {
   });
 }
 
+// --- Settle loan (giver marks as fully settled) ---
+export async function settleLoan(loanId: string) {
+  await updateDoc(doc(db, 'sharedLoans', loanId), {
+    status: 'settled',
+    outstandingAmount: 0,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 // --- Add repayment (transaction: decrement outstanding, settle if 0) ---
 export async function addRepayment(
   loanId: string,
