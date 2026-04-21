@@ -47,10 +47,16 @@ export default function BackupSettings() {
   }
 
   function handleClearCache() {
-    indexedDB.databases?.().then((dbs) => {
-      dbs.forEach((db) => db.name && indexedDB.deleteDatabase(db.name));
+    if (!indexedDB.databases) {
+      toast('Cache clearing not supported in this browser.');
+      return;
+    }
+    indexedDB.databases().then((dbs) => {
+      dbs.forEach((idb) => idb.name && indexedDB.deleteDatabase(idb.name));
+      toast('IndexedDB cache cleared. Reload to reconnect.');
+    }).catch(() => {
+      toast('Failed to clear cache.', 'error');
     });
-    toast('IndexedDB cache cleared. Reload to reconnect.');
   }
 
   return (

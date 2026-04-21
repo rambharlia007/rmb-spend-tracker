@@ -62,7 +62,7 @@ const MORE_SECTIONS = [
 
 export default function Layout() {
   const { user, signOut } = useAuth();
-  const { workspace, loading, error } = useWorkspace();
+  const { workspace, loading, error, retry } = useWorkspace();
   const [moreOpen, setMoreOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -76,9 +76,26 @@ export default function Layout() {
   );
   if (error) return (
     <div className="min-h-screen flex items-center justify-center p-8">
-      <div className="text-center">
-        <p className="text-destructive font-semibold">Error loading workspace</p>
-        <p className="text-sm text-muted-foreground mt-1">{error}</p>
+      <div className="text-center max-w-sm space-y-4">
+        <Wallet className="h-8 w-8 text-muted-foreground mx-auto" />
+        <div>
+          <p className="font-semibold text-destructive">Error loading workspace</p>
+          <p className="text-sm text-muted-foreground mt-1">{error}</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={retry}
+            className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            Retry
+          </button>
+          <button
+            onClick={() => signOut()}
+            className="w-full rounded-md border px-4 py-2.5 text-sm font-medium hover:bg-accent"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -191,7 +208,7 @@ export default function Layout() {
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
           >
             {/* Handle + header */}
-            <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b">
+            <div className="relative flex items-center justify-between px-4 pt-3 pb-2 border-b">
               <div className="mx-auto w-8 h-1 rounded-full bg-muted-foreground/30 absolute left-1/2 -translate-x-1/2 top-2" />
               <span className="text-sm font-semibold">More</span>
               <button

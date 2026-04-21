@@ -61,14 +61,14 @@ export default function LoansGiven() {
 
   useEffect(() => {
     if (!user) return;
-    return subscribeContacts(setContacts);
+    return subscribeContacts(user.uid, setContacts);
   }, [user]);
 
   // Show all contacts (connected or pending) in loan form — we record the loan regardless
   const selectableContacts = contacts;
 
   async function handleSave() {
-    const amt = parseInt(form.amount, 10);
+    const amt = Math.round(parseFloat(form.amount) * 100) / 100;
     if (!form.receiverContactId || isNaN(amt) || amt <= 0 || !form.sourceId) {
       toast('Fill all required fields', 'error');
       return;
@@ -93,7 +93,7 @@ export default function LoansGiven() {
         sourceWorkspaceId: wsId!,
         sourcePaymentSourceId: form.sourceId,
         amount: amt,
-        date: new Date(form.date),
+        date: new Date(form.date + 'T00:00:00'),
         notes: form.notes,
       });
       toast('Loan recorded', 'success');

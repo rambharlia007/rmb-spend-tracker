@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
@@ -36,27 +36,43 @@ export default function LoanDetail() {
   const [saving, setSaving] = useState(false);
   const [repForm, setRepForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
 
+  // Live-updating loan snapshot (not one-shot getDoc)
   useEffect(() => {
     if (!id) return;
-    getDoc(doc(db, 'sharedLoans', id)).then((snap) => {
-      if (!snap.exists()) { setLoan(null); return; }
-      setLoan({ id: snap.id, ...(snap.data() as Omit<SharedLoan, 'id'>) });
-    });
-    return subscribeRepayments(id, setRepayments);
+    const loanUnsub = onSnapshot(
+      doc(db, 'sharedLoans', id),
+      (snap) => {
+        if (!snap.exists()) { setLoan(null); return; }
+        setLoan({ id: snap.id, ...(snap.data() as Omit<SharedLoan, 'id'>) });
+      },
+      () => setLoan(null)
+    );
+    const repUnsub = subscribeRepayments(id, setRepayments);
+    return () => { loanUnsub(); repUnsub(); };
   }, [id]);
 
   async function handleAddRepayment() {
-    const amt = parseInt(repForm.amount, 10);
+    if (!internalId) { toast('User not ready', 'error'); return; }
+    const amt = Math.round(parseFloat(repForm.amount) * 100) / 100;
     if (isNaN(amt) || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
+
+    // Guard against overpayment
+    if (loan !== 'loading' && loan !== null && amt > loan.outstandingAmount) {
+      toast(`Amount exceeds outstanding balance of ${formatINR(loan.outstandingAmount)}`, 'error');
+      return;
+    }
+
     setSaving(true);
     try {
-      await addRepayment(id!, internalId ?? '', { amount: amt, date: new Date(repForm.date), notes: repForm.notes });
+      await addRepayment(id!, internalId, {
+        amount: amt,
+        // Parse as local midnight to avoid UTC off-by-one in IST
+        date: new Date(repForm.date + 'T00:00:00'),
+        notes: repForm.notes,
+      });
       toast('Repayment recorded', 'success');
       setRepOpen(false);
       setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
-      // Refresh loan
-      const snap = await getDoc(doc(db, 'sharedLoans', id!));
-      if (snap.exists()) setLoan({ id: snap.id, ...(snap.data() as Omit<SharedLoan, 'id'>) });
     } catch (e: any) {
       toast(e.message, 'error');
     } finally {
@@ -137,7 +153,7 @@ export default function LoanDetail() {
           <div className="space-y-3">
             <div>
               <Label>Amount (₹) *</Label>
-              <Input type="number" min={1} value={repForm.amount} onChange={(e) => setRepForm((f) => ({ ...f, amount: e.target.value }))} placeholder="500" />
+              <Input type="number" inputMode="decimal" min={1} value={repForm.amount} onChange={(e) => setRepForm((f) => ({ ...f, amount: e.target.value }))} placeholder="500" />
             </div>
             <div>
               <Label>Date *</Label>

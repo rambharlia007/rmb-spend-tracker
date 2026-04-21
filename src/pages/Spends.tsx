@@ -58,7 +58,7 @@ export default function Spends() {
   const filtered = useMemo(() => {
     if (!filters.search.trim()) return items;
     const q = filters.search.toLowerCase();
-    return items.filter((s) => s.notes.toLowerCase().includes(q));
+    return items.filter((s) => (s.notes ?? '').toLowerCase().includes(q));
   }, [items, filters.search]);
 
   const total = useMemo(() => filtered.reduce((a, b) => a + b.amount, 0), [filtered]);

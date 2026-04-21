@@ -15,7 +15,7 @@ export function getDateRange(preset: DateRangePreset, custom?: { from?: Date; to
     case 'fy': {
       // Indian FY: Apr 1 to Mar 31
       const y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-      return { from: new Date(y, 3, 1), to: new Date(y + 1, 2, 31, 23, 59, 59) };
+      return { from: new Date(y, 3, 1), to: new Date(y + 1, 2, 31, 23, 59, 59, 999) };
     }
     case 'custom': return { from: custom?.from, to: custom?.to };
     case 'all':

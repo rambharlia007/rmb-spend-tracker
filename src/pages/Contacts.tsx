@@ -32,12 +32,12 @@ export default function Contacts() {
 
   useEffect(() => {
     if (!user) return;
-    return subscribeContacts(setContacts);
+    return subscribeContacts(user.uid, setContacts);
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
-    return subscribeContactInvites((raw) => setInvites(raw as any));
+    return subscribeContactInvites(user.uid, (raw) => setInvites(raw));
   }, [user]);
 
   async function handleAdd() {

@@ -17,9 +17,15 @@ export function subscribeCollection<T>(
   ...constraints: QueryConstraint[]
 ): () => void {
   const ref = query(collection(db, path[0], ...path.slice(1)), ...constraints);
-  return onSnapshot(ref, (snap) => {
-    cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as T[]);
-  });
+  return onSnapshot(
+    ref,
+    (snap) => {
+      cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as T[]);
+    },
+    (err) => {
+      console.error(`subscribeCollection error [${path.join('/')}]:`, err.message);
+    }
+  );
 }
 
 export async function createInCollection(path: string[], data: Record<string, unknown>) {

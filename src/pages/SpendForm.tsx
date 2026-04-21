@@ -63,7 +63,8 @@ export function SpendForm({
     setSaving(true);
     try {
       const payload = {
-        date: new Date(date),
+        // Parse date as local midnight, not UTC — avoids wrong-day bug in IST
+        date: new Date(date + 'T00:00:00'),
         amount: amt,
         categoryId,
         paymentSourceId,

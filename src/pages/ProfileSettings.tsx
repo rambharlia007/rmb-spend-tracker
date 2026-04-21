@@ -9,17 +9,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 export default function ProfileSettings() {
-  const { user } = useAuth();
+  const { user, internalId } = useAuth();
   const { toast } = useToast();
   const [name, setName] = useState(user?.displayName ?? '');
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
     if (!name.trim()) { toast('Name cannot be empty', 'error'); return; }
+    if (!internalId) { toast('User not ready, please wait', 'error'); return; }
     setSaving(true);
     try {
       await updateProfile(auth.currentUser!, { displayName: name.trim() });
-      await updateDoc(doc(db, 'users', user!.uid), {
+      // Use internalId as doc key — NOT user.uid (which is Google UID)
+      await updateDoc(doc(db, 'users', internalId), {
         displayName: name.trim(),
         updatedAt: serverTimestamp(),
       });

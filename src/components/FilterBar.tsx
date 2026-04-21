@@ -76,7 +76,7 @@ export function FilterBar({
         />
 
         {activeCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={() => onChange({ ...value, categoryIds: [], paymentSourceIds: [], search: '' })}>
+          <Button variant="ghost" size="sm" onClick={() => onChange({ ...value, categoryIds: [], paymentSourceIds: [], search: '', customFrom: undefined, customTo: undefined })}>
             <X className="h-3 w-3" /> Clear
           </Button>
         )}

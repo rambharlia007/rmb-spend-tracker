@@ -13,7 +13,8 @@ function download(filename: string, content: string, mime: string) {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // Delay revoke so browser has time to initiate the download (mobile Safari fix)
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function exportSpendsCSV(
@@ -86,7 +87,7 @@ export function exportSpendsPDF(
   autoTable(doc, {
     startY: finalY + 10,
     head: [['Category', 'Total', '%']],
-    body: summary.map(([name, amt]) => [name, formatINR(amt), ((amt / total) * 100).toFixed(1) + '%']),
+    body: summary.map(([name, amt]) => [name, formatINR(amt), total > 0 ? ((amt / total) * 100).toFixed(1) + '%' : '—']),
     styles: { fontSize: 9 },
     headStyles: { fillColor: [15, 23, 42] },
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }

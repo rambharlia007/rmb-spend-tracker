@@ -48,10 +48,6 @@ async function seedWorkspaceData(wsId: string) {
   await batch.commit();
 }
 
-/**
- * Find existing /users doc by googleUid field.
- * Returns { internalId, workspaceId } or null.
- */
 async function findUserDocByGoogleUid(googleUid: string) {
   const q = query(collection(db, 'users'), where('googleUid', '==', googleUid), limit(1));
   const snap = await getDocs(q);
@@ -60,10 +56,6 @@ async function findUserDocByGoogleUid(googleUid: string) {
   return { internalId: d.id, data: d.data() };
 }
 
-/**
- * Find existing /users doc by email (may be pre-created by another user adding this email as contact).
- * Returns doc id (internalId) or null.
- */
 async function findUserDocByEmail(email: string) {
   const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase()), limit(1));
   const snap = await getDocs(q);
@@ -73,7 +65,7 @@ async function findUserDocByEmail(email: string) {
 }
 
 /**
- * Bootstrap user on sign-in. Uses internalId as stable FK (not googleUid).
+ * Bootstrap user on sign-in. Wrapped with retry logic for transient errors.
  *
  * Logic:
  * 1. Check if /users doc with googleUid already exists → already bootstrapped
@@ -83,7 +75,7 @@ async function findUserDocByEmail(email: string) {
  *
  * Returns { internalId, workspaceId }
  */
-export async function bootstrapUser(user: User): Promise<{ internalId: string; workspaceId: string }> {
+async function _bootstrapUser(user: User): Promise<{ internalId: string; workspaceId: string }> {
   // 1. Already registered? (has googleUid field)
   const byGoogleUid = await findUserDocByGoogleUid(user.uid);
   if (byGoogleUid) {
@@ -98,12 +90,16 @@ export async function bootstrapUser(user: User): Promise<{ internalId: string; w
   let internalId: string;
   let userRef;
 
-  if (byEmail && !byEmail.data.isRegistered) {
-    // Reuse the existing doc — internalId stays the same (FK integrity maintained)
-    internalId = byEmail.internalId;
+  // Only reuse stub if it is genuinely unregistered (googleUid is null/missing)
+  const isUnregisteredStub =
+    byEmail != null &&
+    (byEmail.data.isRegistered === false || !byEmail.data.isRegistered) &&
+    (byEmail.data.googleUid == null || byEmail.data.googleUid === '');
+
+  if (isUnregisteredStub) {
+    internalId = byEmail!.internalId;
     userRef = doc(db, 'users', internalId);
   } else {
-    // Fresh user — generate new internalId
     userRef = doc(collection(db, 'users'));
     internalId = userRef.id;
   }
@@ -112,17 +108,17 @@ export async function bootstrapUser(user: User): Promise<{ internalId: string; w
   const wsRef = doc(collection(db, 'workspaces'));
   await setDoc(wsRef, {
     name: `${user.displayName?.split(' ')[0] ?? 'My'}'s Workspace`,
-    ownerUid: internalId,   // use internalId, not googleUid
+    ownerUid: internalId,
     members: [internalId],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
-  if (byEmail && !byEmail.data.isRegistered) {
-    // Update existing stub doc
+  if (isUnregisteredStub) {
+    // Update existing stub doc — always set googleUid: null explicitly before so rule allows it
     await updateDoc(userRef, {
       googleUid: user.uid,
-      displayName: user.displayName ?? byEmail.data.displayName ?? '',
+      displayName: user.displayName ?? byEmail!.data.displayName ?? '',
       photoURL: user.photoURL ?? null,
       isRegistered: true,
       currentWorkspaceId: wsRef.id,
@@ -143,4 +139,26 @@ export async function bootstrapUser(user: User): Promise<{ internalId: string; w
 
   await seedWorkspaceData(wsRef.id);
   return { internalId, workspaceId: wsRef.id };
+}
+
+/** Retry wrapper — retries once on transient errors (network, token expiry) */
+export async function bootstrapUser(user: User): Promise<{ internalId: string; workspaceId: string }> {
+  try {
+    return await _bootstrapUser(user);
+  } catch (err: any) {
+    // Retry once for transient errors (network, token expiry race)
+    const isTransient =
+      err?.code === 'unavailable' ||
+      err?.code === 'deadline-exceeded' ||
+      err?.code === 'unauthenticated' ||
+      err?.message?.includes('network') ||
+      err?.message?.includes('offline');
+
+    if (isTransient) {
+      // Wait 1.5s then retry
+      await new Promise((r) => setTimeout(r, 1500));
+      return await _bootstrapUser(user);
+    }
+    throw err;
+  }
 }

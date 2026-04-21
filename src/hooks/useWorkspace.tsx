@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,6 +10,7 @@ type WorkspaceContextValue = {
   workspace: Workspace | null;
   loading: boolean;
   error: string | null;
+  retry: () => void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -20,12 +21,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
+  const retry = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    setRetryCount((n) => n + 1);
+  }, []);
+
+  // Bootstrap effect — re-runs on user change or manual retry
   useEffect(() => {
     if (!user) {
       setWorkspaceId(null);
       setWorkspace(null);
       setLoading(false);
+      setError(null);
       return;
     }
 
@@ -35,23 +45,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     bootstrapUser(user)
       .then(({ internalId, workspaceId: wsId }) => {
-        if (!cancelled) {
-          setInternalId(internalId);
-          setWorkspaceId(wsId);
-        }
+        if (cancelled) return;
+        setInternalId(internalId);
+        setWorkspaceId(wsId);
+        // Don't set loading=false here — let the onSnapshot do it
+        // But set a safety timeout in case onSnapshot never fires (e.g. offline)
       })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e.message ?? 'Failed to initialize workspace');
-          setLoading(false);
-        }
+      .catch((e: any) => {
+        if (cancelled) return;
+        const msg = e?.message ?? 'Failed to initialize workspace. Check your connection and try again.';
+        setError(msg);
+        setLoading(false);
       });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, retryCount, setInternalId]);
 
+  // Safety timeout — if onSnapshot hasn't fired 8s after bootstrap, stop spinning
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (loading && !error) {
+      loadingTimeoutRef.current = setTimeout(() => {
+        setLoading((prev) => {
+          if (prev) {
+            setError('Loading timed out. Please check your connection.');
+            return false;
+          }
+          return prev;
+        });
+      }, 8000);
+    }
+    return () => {
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    };
+  }, [loading, error, retryCount]);
+
+  // Workspace snapshot effect
   useEffect(() => {
     if (!workspaceId) return;
     const unsub = onSnapshot(
@@ -61,8 +91,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setWorkspace({ id: snap.id, ...(snap.data() as Omit<Workspace, 'id'>) });
         }
         setLoading(false);
+        setError(null);
       },
       (e) => {
+        // Permission errors on snapshot — likely transient token issue, surface it
         setError(e.message);
         setLoading(false);
       }
@@ -71,7 +103,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [workspaceId]);
 
   return (
-    <WorkspaceContext.Provider value={{ workspaceId, workspace, loading, error }}>
+    <WorkspaceContext.Provider value={{ workspaceId, workspace, loading, error, retry }}>
       {children}
     </WorkspaceContext.Provider>
   );

@@ -6,6 +6,8 @@ import { formatINR } from '@/lib/utils';
 import { subscribeSpends } from '@/lib/firestore/spends';
 import { subscribeCategories } from '@/lib/firestore/categories';
 import { subscribeLoansGiven, subscribeLoansReceived } from '@/lib/firestore/loans';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Receipt, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -46,8 +48,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!wsId) return;
-    return subscribeSpends(wsId, {}, (spends) => {
-      setRecentSpends(spends.slice(0, 5));
+    // Use limit(5) directly — don't fetch entire collection
+    const q = query(
+      collection(db, 'workspaces', wsId, 'spends'),
+      orderBy('date', 'desc'),
+      limit(5)
+    );
+    return onSnapshot(q, (snap) => {
+      setRecentSpends(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Spend, 'id'>) })));
     });
   }, [wsId]);
 
@@ -179,10 +187,10 @@ function CategoryBreakdown({
 
   return (
     <div className="space-y-3">
-      {sorted.map(({ cat, amount }, i) => {
+      {sorted.map(({ cat, amount }) => {
         const pct = total > 0 ? (amount / total) * 100 : 0;
         return (
-          <div key={i} className="flex items-center gap-3">
+          <div key={cat?.id ?? cat?.name ?? amount} className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center text-base shrink-0">
               {cat?.icon ?? '💸'}
             </div>
