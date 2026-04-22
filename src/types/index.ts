@@ -68,6 +68,28 @@ export type Contact = {
   createdAt: Timestamp;
 };
 
+export type InvestmentType = {
+  id: string;
+  name: string;
+  icon: string;
+  active: boolean;
+  isDefault: boolean; // seeded defaults cannot be deleted
+  createdAt: Timestamp;
+};
+
+export type Investment = {
+  id: string;
+  name: string;
+  typeId: string;
+  amount: number; // invested amount
+  date: Timestamp;
+  notes?: string;
+  linkedInternalId?: string | null; // optional linked user — display only
+  createdBy: string; // internalId
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
 // 'closed' = receiver disputed → loan permanently closed, no further action.
 // 'disputed' kept for backward compat with existing DB docs — treated identically to 'closed' in UI.
 export type LoanStatus = 'unconfirmed' | 'accepted' | 'disputed' | 'settled' | 'closed';

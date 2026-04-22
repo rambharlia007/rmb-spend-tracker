@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db } from '@/lib/firebase';
+import { seedInvestmentTypes } from '@/lib/firestore/investments';
 
 const DEFAULT_CATEGORIES = [
   { name: 'Food', icon: '🍽️', color: '#f59e0b' },
@@ -46,6 +47,7 @@ async function seedWorkspaceData(wsId: string) {
     batch.set(ref, { ...src, active: true, createdAt: serverTimestamp() });
   }
   await batch.commit();
+  await seedInvestmentTypes(wsId);
 }
 
 async function findUserDocByGoogleUid(googleUid: string) {

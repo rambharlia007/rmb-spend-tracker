@@ -18,6 +18,8 @@ import ProfileSettings from '@/pages/ProfileSettings';
 import BackupSettings from '@/pages/BackupSettings';
 import AdminLogs from '@/pages/AdminLogs';
 import Notes from '@/pages/Notes';
+import Investments from '@/pages/Investments';
+import InvestmentTypes from '@/pages/InvestmentTypes';
 
 export default function App() {
   return (
@@ -42,6 +44,8 @@ export default function App() {
             <Route path="/loan/:id" element={<LoanDetail />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/notes" element={<Notes />} />
+            <Route path="/investments" element={<Investments />} />
+            <Route path="/investment-types" element={<InvestmentTypes />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/payment-sources" element={<PaymentSources />} />
             <Route path="/settings/workspace" element={<WorkspaceSettings />} />

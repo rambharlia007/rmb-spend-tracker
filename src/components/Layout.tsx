@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Receipt, HandCoins, ArrowDownToLine, Users, Tags,
   CreditCard, Settings, LogOut, User, Database, Wallet, MoreHorizontal, X,
-  ChevronRight, Bug, StickyNote
+  ChevronRight, Bug, StickyNote, TrendingUp
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -17,6 +17,7 @@ const MAIN_NAV = [
   { to: '/loans-taken', label: 'Loans Taken', icon: ArrowDownToLine },
   { to: '/contacts', label: 'Contacts', icon: Users },
   { to: '/notes', label: 'Notes', icon: StickyNote },
+  { to: '/investments', label: 'Investments', icon: TrendingUp },
   { to: '/categories', label: 'Categories', icon: Tags },
   { to: '/payment-sources', label: 'Sources', icon: CreditCard },
 ];
@@ -41,6 +42,7 @@ const MORE_SECTIONS = [
     title: 'Personal',
     items: [
       { to: '/notes', label: 'Notes', icon: StickyNote },
+      { to: '/investments', label: 'Investments', icon: TrendingUp },
     ],
   },
   {

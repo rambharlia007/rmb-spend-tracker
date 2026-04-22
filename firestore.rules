@@ -57,6 +57,12 @@ service cloud.firestore {
       match /notes/{id} {
         allow read, write: if isSignedIn();
       }
+      match /investments/{id} {
+        allow read, write: if isSignedIn();
+      }
+      match /investmentTypes/{id} {
+        allow read, write: if isSignedIn();
+      }
       match /invites/{id} {
         allow read, write: if isSignedIn();
       }
