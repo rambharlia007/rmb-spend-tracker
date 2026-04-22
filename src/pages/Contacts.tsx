@@ -35,9 +35,15 @@ export default function Contacts() {
     return subscribeContacts(internalId, setContacts);
   }, [internalId]);
 
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!internalId) return;
-    return subscribeContactInvites(internalId, (raw) => setInvites(raw));
+    setInviteError(null);
+    return subscribeContactInvites(internalId, (raw) => setInvites(raw), (err) => {
+      console.error('subscribeContactInvites error:', err.message);
+      setInviteError(err.message);
+    });
   }, [internalId]);
 
   async function handleAdd() {
@@ -138,6 +144,13 @@ export default function Contacts() {
           {adding ? 'Saving…' : 'Add Contact'}
         </Button>
       </div>
+
+      {/* Incoming invites error */}
+      {inviteError && (
+        <div className="rounded-lg border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          Could not load invites: {inviteError}
+        </div>
+      )}
 
       {/* Incoming invites */}
       {invites && invites.length > 0 && (

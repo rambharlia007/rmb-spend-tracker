@@ -35,14 +35,17 @@ export type ContactInvite = {
   myContactDocId?: string;
 };
 
-export function subscribeContactInvites(myInternalId: string, cb: (items: ContactInvite[]) => void) {
+export function subscribeContactInvites(myInternalId: string, cb: (items: ContactInvite[]) => void, onError?: (err: Error) => void) {
   const q = query(collection(db, 'users', myInternalId, 'contactInvites'), orderBy('createdAt', 'desc'));
   return onSnapshot(
     q,
     (snap) => {
       cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ContactInvite, 'id'>) })));
     },
-    (err) => { console.error('subscribeContactInvites error:', err.message); }
+    (err) => {
+      console.error('subscribeContactInvites error:', err.message);
+      onError?.(err);
+    }
   );
 }
 
