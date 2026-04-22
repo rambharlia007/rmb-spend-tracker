@@ -10,16 +10,35 @@ import {
   removeContact,
   type ContactInvite,
 } from '@/lib/firestore/contacts';
+import {
+  subscribeLoansGiven,
+  subscribeLoansReceived,
+  netSettleLoans,
+} from '@/lib/firestore/loans';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { Contact } from '@/types';
-import { Users, UserPlus, Check, X, Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import type { Contact, SharedLoan } from '@/types';
+import { Users, UserPlus, Check, X, Trash2, ArrowRightLeft } from 'lucide-react';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
+import { formatINR } from '@/lib/utils';
+
+// Active loan statuses (not terminal)
+const ACTIVE = new Set(['unconfirmed', 'accepted']);
+
+type NetBalance = {
+  theyOweMe: number;   // sum of my active loans given to them
+  IOweТhem: number;    // sum of active loans they gave me
+  net: number;         // theyOweMe - IOweТhem (positive = they owe me)
+  givenLoans: SharedLoan[];
+  takenLoans: SharedLoan[];
+  canSettle: boolean;  // true only when both sides > 0 (netting is possible)
+};
 
 export default function Contacts() {
   const { user, internalId } = useAuth();
@@ -27,17 +46,22 @@ export default function Contacts() {
 
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [invites, setInvites] = useState<ContactInvite[] | null>(null);
+  const [loansGiven, setLoansGiven] = useState<SharedLoan[]>([]);
+  const [loansReceived, setLoansReceived] = useState<SharedLoan[]>([]);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Settlement dialog state
+  const [settleTarget, setSettleTarget] = useState<{ contact: Contact; balance: NetBalance } | null>(null);
+  const [settling, setSettling] = useState(false);
 
   useEffect(() => {
     if (!internalId) return;
     return subscribeContacts(internalId, setContacts);
   }, [internalId]);
-
-  const [inviteError, setInviteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!internalId) return;
@@ -47,6 +71,38 @@ export default function Contacts() {
       setInviteError(err.message);
     });
   }, [internalId]);
+
+  useEffect(() => {
+    if (!internalId) return;
+    return subscribeLoansGiven(internalId, setLoansGiven);
+  }, [internalId]);
+
+  useEffect(() => {
+    if (!internalId) return;
+    return subscribeLoansReceived(internalId, setLoansReceived);
+  }, [internalId]);
+
+  // Compute net balance per contact (keyed by refUserId)
+  function getNetBalance(contact: Contact): NetBalance | null {
+    if (!contact.refUserId) return null;
+    const given = loansGiven.filter(
+      (l) => l.receiverInternalId === contact.refUserId && ACTIVE.has(l.status)
+    );
+    const taken = loansReceived.filter(
+      (l) => l.giverInternalId === contact.refUserId && ACTIVE.has(l.status)
+    );
+    if (given.length === 0 && taken.length === 0) return null;
+    const theyOweMe = given.reduce((s, l) => s + l.outstandingAmount, 0);
+    const IOweТhem  = taken.reduce((s, l) => s + l.outstandingAmount, 0);
+    return {
+      theyOweMe,
+      IOweТhem,
+      net: theyOweMe - IOweТhem,
+      givenLoans: given,
+      takenLoans: taken,
+      canSettle: theyOweMe > 0 && IOweТhem > 0,
+    };
+  }
 
   async function handleAdd() {
     const trimmedEmail = email.trim().toLowerCase();
@@ -114,6 +170,21 @@ export default function Contacts() {
       toast(friendlyError(e), 'error');
     } finally {
       setDeleteTarget(null);
+    }
+  }
+
+  async function handleSettle() {
+    if (!settleTarget) return;
+    setSettling(true);
+    try {
+      await netSettleLoans(settleTarget.balance.givenLoans, settleTarget.balance.takenLoans);
+      toast(`Settled with ${settleTarget.contact.displayName || settleTarget.contact.email}`, 'success');
+      setSettleTarget(null);
+    } catch (e: unknown) {
+      logError('Contacts.netSettle', e);
+      toast(friendlyError(e), 'error');
+    } finally {
+      setSettling(false);
     }
   }
 
@@ -194,24 +265,60 @@ export default function Contacts() {
           <EmptyState icon={Users} title="No contacts yet" description="Add a friend by email above." />
         ) : (
           <div className="divide-y rounded-lg border overflow-hidden">
-            {contacts.map((c) => (
-              <div key={c.id} className="flex items-center justify-between px-4 py-3 bg-card">
-                <div>
-                  <div className="text-sm font-medium">{c.displayName || c.email}</div>
-                  <div className="text-xs text-muted-foreground">{c.email}</div>
+            {contacts.map((c) => {
+              const bal = getNetBalance(c);
+              return (
+                <div key={c.id} className="px-4 py-3 bg-card">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{c.displayName || c.email}</div>
+                      <div className="text-xs text-muted-foreground truncate">{c.email}</div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusBadge status={c.status} />
+                      {bal?.canSettle && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs gap-1"
+                          onClick={() => setSettleTarget({ contact: c, balance: bal })}
+                        >
+                          <ArrowRightLeft className="h-3 w-3" /> Settle
+                        </Button>
+                      )}
+                      <Button size="icon" variant="ghost" onClick={() => setDeleteTarget(c)}>
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Net balance row */}
+                  {bal && (
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                      {bal.theyOweMe > 0 && (
+                        <span className="text-xs text-green-600 font-medium">
+                          They owe you {formatINR(bal.theyOweMe)}
+                        </span>
+                      )}
+                      {bal.IOweТhem > 0 && (
+                        <span className="text-xs text-red-500 font-medium">
+                          You owe them {formatINR(bal.IOweТhem)}
+                        </span>
+                      )}
+                      {bal.net !== 0 && bal.canSettle && (
+                        <span className="text-xs text-muted-foreground">
+                          · Net: {bal.net > 0 ? `they owe you ${formatINR(bal.net)}` : `you owe them ${formatINR(Math.abs(bal.net))}`}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={c.status} />
-                <Button size="icon" variant="ghost" onClick={() => setDeleteTarget(c)}>
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
 
+      {/* Delete confirm */}
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
@@ -221,6 +328,69 @@ export default function Contacts() {
         destructive
         onConfirm={handleDelete}
       />
+
+      {/* Net settlement dialog */}
+      {settleTarget && (
+        <Dialog open onOpenChange={(o) => { if (!o && !settling) setSettleTarget(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Settle with {settleTarget.contact.displayName || settleTarget.contact.email}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              <div className="rounded-lg bg-muted/50 p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">You lent them</span>
+                  <span className="font-semibold text-green-600">{formatINR(settleTarget.balance.theyOweMe)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">They lent you</span>
+                  <span className="font-semibold text-red-500">{formatINR(settleTarget.balance.IOweТhem)}</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-semibold">
+                  <span>Net outstanding</span>
+                  <span className={settleTarget.balance.net >= 0 ? 'text-green-600' : 'text-red-500'}>
+                    {settleTarget.balance.net >= 0
+                      ? `They owe you ${formatINR(settleTarget.balance.net)}`
+                      : `You owe them ${formatINR(Math.abs(settleTarget.balance.net))}`}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1 text-muted-foreground text-xs">
+                <p>
+                  <strong className="text-foreground">
+                    {settleTarget.balance.theyOweMe <= settleTarget.balance.IOweТhem
+                      ? `${settleTarget.balance.givenLoans.length} loan${settleTarget.balance.givenLoans.length > 1 ? 's' : ''} you gave`
+                      : `${settleTarget.balance.takenLoans.length} loan${settleTarget.balance.takenLoans.length > 1 ? 's' : ''} they gave`
+                    }
+                  </strong>
+                  {' '}will be marked fully settled.
+                </p>
+                <p>
+                  <strong className="text-foreground">
+                    {settleTarget.balance.theyOweMe <= settleTarget.balance.IOweТhem
+                      ? `${settleTarget.balance.takenLoans.length} loan${settleTarget.balance.takenLoans.length > 1 ? 's' : ''} they gave`
+                      : `${settleTarget.balance.givenLoans.length} loan${settleTarget.balance.givenLoans.length > 1 ? 's' : ''} you gave`
+                    }
+                  </strong>
+                  {' '}will be reduced by {
+                    formatINR(Math.min(settleTarget.balance.theyOweMe, settleTarget.balance.IOweТhem))
+                  }.
+                  {settleTarget.balance.net !== 0 && (
+                    <> {formatINR(Math.abs(settleTarget.balance.net))} remains outstanding.</>
+                  )}
+                </p>
+                <p className="pt-1">Settlement notes will be added to each loan automatically.</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setSettleTarget(null)} disabled={settling}>Cancel</Button>
+              <Button size="sm" onClick={handleSettle} disabled={settling}>
+                {settling ? 'Settling…' : 'Confirm Settle'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

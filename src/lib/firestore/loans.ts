@@ -10,8 +10,10 @@ import {
   runTransaction,
   updateDoc,
   setDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
+import { format } from 'date-fns';
 import type { SharedLoan, LoanStatus } from '@/types';
 
 export type Repayment = {
@@ -159,4 +161,84 @@ export async function addRepayment(
       updatedAt: serverTimestamp(),
     });
   });
+}
+
+// --- Net settlement between two parties ---
+// Given loans I gave to person X, and loans X gave me:
+// - Marks all loans on the smaller side as settled
+// - Reduces outstanding on the larger side (smallest loans first) by the netting amount
+// - Adds repayment sub-docs on each reduced loan documenting the offset
+export async function netSettleLoans(
+  givenLoans: SharedLoan[],  // loans I gave to person X (active only)
+  takenLoans: SharedLoan[],  // loans X gave me (active only)
+) {
+  if (!auth.currentUser) throw new Error('Not signed in');
+
+  const dateStr = format(new Date(), 'dd MMM yyyy');
+  const settlementNote = `Net settled on ${dateStr}`;
+  const partialNote = (amt: number) => `Partially net settled on ${dateStr} (₹${amt.toLocaleString('en-IN')} offset)`;
+
+  const givenTotal = givenLoans.reduce((s, l) => s + l.outstandingAmount, 0);
+  const takenTotal = takenLoans.reduce((s, l) => s + l.outstandingAmount, 0);
+
+  // Determine which side is smaller (gets fully settled) and which is larger (gets reduced)
+  const smallerSide = givenTotal <= takenTotal ? givenLoans : takenLoans;
+  const largerSide  = givenTotal <= takenTotal ? takenLoans : givenLoans;
+  const offsetAmount = Math.min(givenTotal, takenTotal); // amount to net off from larger side
+
+  const batch = writeBatch(db);
+
+  // 1. Mark all smaller-side loans as settled
+  for (const loan of smallerSide) {
+    batch.update(doc(db, 'sharedLoans', loan.id), {
+      status: 'settled' as LoanStatus,
+      outstandingAmount: 0,
+      notes: loan.notes ? `${loan.notes} · ${settlementNote}` : settlementNote,
+      updatedAt: serverTimestamp(),
+    });
+    // Add repayment sub-doc to document the net settlement
+    const repRef = doc(collection(db, 'sharedLoans', loan.id, 'repayments'));
+    batch.set(repRef, {
+      amount: loan.outstandingAmount,
+      date: Timestamp.fromDate(new Date()),
+      notes: settlementNote,
+      paidByInternalId: auth.currentUser!.uid,
+      confirmedByGiver: true,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  // 2. Reduce larger-side loans (smallest first) by offsetAmount
+  // Sort smallest outstanding first
+  const sortedLarger = [...largerSide].sort((a, b) => a.outstandingAmount - b.outstandingAmount);
+  let remaining = offsetAmount;
+
+  for (const loan of sortedLarger) {
+    if (remaining <= 0) break;
+    const reduce = Math.min(loan.outstandingAmount, remaining);
+    const newOutstanding = Math.round((loan.outstandingAmount - reduce) * 100) / 100;
+    remaining = Math.round((remaining - reduce) * 100) / 100;
+
+    const isFullySettled = newOutstanding === 0;
+    batch.update(doc(db, 'sharedLoans', loan.id), {
+      outstandingAmount: newOutstanding,
+      status: isFullySettled ? ('settled' as LoanStatus) : loan.status,
+      notes: loan.notes
+        ? `${loan.notes} · ${isFullySettled ? settlementNote : partialNote(reduce)}`
+        : (isFullySettled ? settlementNote : partialNote(reduce)),
+      updatedAt: serverTimestamp(),
+    });
+    // Add repayment sub-doc for the reduced amount
+    const repRef = doc(collection(db, 'sharedLoans', loan.id, 'repayments'));
+    batch.set(repRef, {
+      amount: reduce,
+      date: Timestamp.fromDate(new Date()),
+      notes: isFullySettled ? settlementNote : partialNote(reduce),
+      paidByInternalId: auth.currentUser!.uid,
+      confirmedByGiver: true,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
 }
