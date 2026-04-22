@@ -4,6 +4,8 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useToast } from '@/hooks/useToast';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -52,8 +54,9 @@ export default function WorkspaceSettings() {
         updatedAt: serverTimestamp(),
       });
       toast('Workspace renamed', 'success');
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('WorkspaceSettings.rename', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setSaving(false);
     }

@@ -15,6 +15,8 @@ import { formatINR } from '@/lib/utils';
 import { getDateRange } from '@/lib/dateRanges';
 import { SpendForm } from '@/pages/SpendForm';
 import { exportSpendsCSV, exportSpendsPDF } from '@/lib/export/exporter';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 
 export default function Spends() {
   const { workspaceId, workspace } = useWorkspace();
@@ -79,7 +81,7 @@ export default function Spends() {
   const remove = async () => {
     if (!workspaceId || !confirmDel) return;
     try { await deleteSpend(workspaceId, confirmDel.id); toast('Deleted', 'success'); }
-    catch (e) { toast((e as Error).message, 'error'); }
+    catch (e: unknown) { logError('Spends.deleteSpend', e); toast(friendlyError(e), 'error'); }
   };
 
   return (

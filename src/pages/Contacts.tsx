@@ -18,6 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Contact } from '@/types';
 import { Users, UserPlus, Check, X, Trash2 } from 'lucide-react';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 
 export default function Contacts() {
   const { user, internalId } = useAuth();
@@ -72,8 +74,9 @@ export default function Contacts() {
       } else {
         toast('Contact saved. They\'ll connect when they sign up.', 'success');
       }
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('Contacts.addContact', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setAdding(false);
     }
@@ -84,8 +87,9 @@ export default function Contacts() {
     try {
       await acceptContactInvite(invite, internalId);
       toast(`Connected with ${invite.senderName || invite.senderEmail}`, 'success');
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('Contacts.acceptInvite', e);
+      toast(friendlyError(e), 'error');
     }
   }
 
@@ -94,8 +98,9 @@ export default function Contacts() {
     try {
       await declineContactInvite(invite.id, internalId);
       toast('Invite declined');
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('Contacts.declineInvite', e);
+      toast(friendlyError(e), 'error');
     }
   }
 
@@ -104,8 +109,9 @@ export default function Contacts() {
     try {
       await removeContact(deleteTarget.id, internalId);
       toast('Contact removed');
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('Contacts.removeContact', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setDeleteTarget(null);
     }

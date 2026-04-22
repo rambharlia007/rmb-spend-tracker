@@ -16,6 +16,7 @@ import LoanDetail from '@/pages/LoanDetail';
 import WorkspaceSettings from '@/pages/WorkspaceSettings';
 import ProfileSettings from '@/pages/ProfileSettings';
 import BackupSettings from '@/pages/BackupSettings';
+import AdminLogs from '@/pages/AdminLogs';
 
 export default function App() {
   return (
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="/settings/workspace" element={<WorkspaceSettings />} />
             <Route path="/settings/profile" element={<ProfileSettings />} />
             <Route path="/settings/backup" element={<BackupSettings />} />
+            <Route path="/admin/logs" element={<AdminLogs />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>

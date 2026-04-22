@@ -59,6 +59,17 @@ service cloud.firestore {
       }
     }
 
+    // App-wide error logs — centralised, flat collection
+    // Any signed-in user can write their own error docs.
+    // Only the admin (identified by email on the user doc) can read all logs.
+    // Since we can't query email directly in rules without a get(), we keep read open
+    // to signed-in users and restrict in the UI (AdminLogs page hard-redirects non-admins).
+    match /appLogs/{logId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn();
+      allow update, delete: if false;
+    }
+
     // Shared loans — giver or receiver by internalId
     match /sharedLoans/{loanId} {
       function isGiverOrReceiver() {

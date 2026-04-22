@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { IconPicker, ColorPicker } from '@/components/IconColorPicker';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 
 type Form = { id?: string; name: string; icon: string; color: string; active: boolean };
 const EMPTY: Form = { name: '', icon: '📦', color: '#64748b', active: true };
@@ -44,14 +46,20 @@ export default function Categories() {
         toast('Category added', 'success');
       }
       setOpen(false);
-    } catch (e) {
-      toast((e as Error).message, 'error');
+    } catch (e: unknown) {
+      logError('Categories.save', e);
+      toast(friendlyError(e), 'error');
     }
   };
 
   const toggleActive = async (c: Category) => {
     if (!workspaceId) return;
-    await updateCategory(workspaceId, c.id, { active: !c.active });
+    try {
+      await updateCategory(workspaceId, c.id, { active: !c.active });
+    } catch (e: unknown) {
+      logError('Categories.toggleActive', e);
+      toast(friendlyError(e), 'error');
+    }
   };
 
   const remove = async () => {
@@ -59,8 +67,9 @@ export default function Categories() {
     try {
       await deleteCategory(workspaceId, confirmDel.id);
       toast('Category deleted', 'success');
-    } catch (e) {
-      toast((e as Error).message, 'error');
+    } catch (e: unknown) {
+      logError('Categories.delete', e);
+      toast(friendlyError(e), 'error');
     }
   };
 

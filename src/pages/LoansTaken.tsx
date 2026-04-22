@@ -3,6 +3,8 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
 import { subscribeLoansReceived, acceptLoan, disputeLoan } from '@/lib/firestore/loans';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 import { formatINR } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -36,8 +38,9 @@ export default function LoansTaken() {
     try {
       await acceptLoan(loanId);
       toast('Loan accepted', 'success');
-    } catch (err: any) {
-      toast(err.message, 'error');
+    } catch (err: unknown) {
+      logError('LoansTaken.acceptLoan', err);
+      toast(friendlyError(err), 'error');
     }
   }
 
@@ -46,8 +49,9 @@ export default function LoansTaken() {
     try {
       await disputeLoan(loanId);
       toast('Loan closed as disputed — create a new one if needed', 'success');
-    } catch (err: any) {
-      toast(err.message, 'error');
+    } catch (err: unknown) {
+      logError('LoansTaken.disputeLoan', err);
+      toast(friendlyError(err), 'error');
     }
   }
 

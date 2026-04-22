@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 
 type Form = { id?: string; name: string; type: PaymentSourceType; last4: string; active: boolean };
 const EMPTY: Form = { name: '', type: 'bank', last4: '', active: true };
@@ -56,14 +58,20 @@ export default function PaymentSources() {
         toast('Added', 'success');
       }
       setOpen(false);
-    } catch (e) {
-      toast((e as Error).message, 'error');
+    } catch (e: unknown) {
+      logError('PaymentSources.save', e);
+      toast(friendlyError(e), 'error');
     }
   };
 
   const toggleActive = async (s: PaymentSource) => {
     if (!workspaceId) return;
-    await updatePaymentSource(workspaceId, s.id, { active: !s.active });
+    try {
+      await updatePaymentSource(workspaceId, s.id, { active: !s.active });
+    } catch (e: unknown) {
+      logError('PaymentSources.toggleActive', e);
+      toast(friendlyError(e), 'error');
+    }
   };
 
   const remove = async () => {
@@ -71,8 +79,9 @@ export default function PaymentSources() {
     try {
       await deletePaymentSource(workspaceId, confirmDel.id);
       toast('Deleted', 'success');
-    } catch (e) {
-      toast((e as Error).message, 'error');
+    } catch (e: unknown) {
+      logError('PaymentSources.delete', e);
+      toast(friendlyError(e), 'error');
     }
   };
 

@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Receipt, HandCoins, ArrowDownToLine, Users, Tags,
   CreditCard, Settings, LogOut, User, Database, Wallet, MoreHorizontal, X,
-  ChevronRight
+  ChevronRight, Bug
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -59,6 +59,8 @@ const MORE_SECTIONS = [
     ],
   },
 ];
+
+const ADMIN_EMAIL = 'rambharlia007@gmail.com';
 
 export default function Layout() {
   const { user, signOut } = useAuth();
@@ -126,6 +128,14 @@ export default function Layout() {
             Settings
           </div>
           {SETTINGS_NAV.map((item) => <SidebarLink key={item.to} {...item} />)}
+          {user?.email === ADMIN_EMAIL && (
+            <>
+              <div className="mt-3 mb-1 px-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                Admin
+              </div>
+              <SidebarLink to="/admin/logs" label="Error Logs" icon={Bug} />
+            </>
+          )}
         </nav>
 
         <div className="flex items-center gap-2 p-3 border-t">
@@ -254,6 +264,23 @@ export default function Layout() {
                   ))}
                 </div>
               ))}
+
+              {/* Admin section */}
+              {user?.email === ADMIN_EMAIL && (
+                <>
+                  <div className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Admin
+                  </div>
+                  <button
+                    onClick={() => handleMoreNav('/admin/logs')}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left"
+                  >
+                    <Bug className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="flex-1 text-sm">Error Logs</span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                  </button>
+                </>
+              )}
 
               {/* Sign out */}
               <div className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

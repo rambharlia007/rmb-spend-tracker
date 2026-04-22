@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import { db } from '@/lib/firebase';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useToast } from '@/hooks/useToast';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { Download, Trash2, FileText } from 'lucide-react';
 import { format } from 'date-fns';
@@ -41,8 +43,9 @@ export default function BackupSettings() {
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast('Backup downloaded', 'success');
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('BackupSettings.jsonExport', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setExporting(false);
     }

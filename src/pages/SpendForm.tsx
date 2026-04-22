@@ -11,6 +11,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { createSpend, updateSpend } from '@/lib/firestore/spends';
 import type { Category, PaymentSource, Spend } from '@/types';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 
 export function SpendForm({
   open,
@@ -80,8 +82,9 @@ export function SpendForm({
         toast('Spend added', 'success');
       }
       onOpenChange(false);
-    } catch (e) {
-      toast((e as Error).message, 'error');
+    } catch (e: unknown) {
+      logError('SpendForm.save', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setSaving(false);
     }

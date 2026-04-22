@@ -4,6 +4,8 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { subscribeLoansGiven, createLoan, settleLoan } from '@/lib/firestore/loans';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 import { subscribeContacts } from '@/lib/firestore/contacts';
 import { findUserByEmail } from '@/lib/firestore/userLookup';
 import { subscribePaymentSources } from '@/lib/firestore/paymentSources';
@@ -100,8 +102,9 @@ export default function LoansGiven() {
       toast('Loan recorded', 'success');
       setOpen(false);
       setForm({ receiverContactId: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '', sourceId: '' });
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('LoansGiven.createLoan', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setSaving(false);
     }
@@ -113,8 +116,9 @@ export default function LoansGiven() {
     try {
       await settleLoan(settleTarget.id);
       toast('Loan marked as settled', 'success');
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('LoansGiven.settleLoan', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setSettling(false);
       setSettleTarget(null);

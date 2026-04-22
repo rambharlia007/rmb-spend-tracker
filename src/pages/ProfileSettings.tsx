@@ -4,6 +4,8 @@ import { updateProfile } from 'firebase/auth';
 import { db, auth } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,8 +28,9 @@ export default function ProfileSettings() {
         updatedAt: serverTimestamp(),
       });
       toast('Profile updated', 'success');
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('ProfileSettings.save', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setSaving(false);
     }

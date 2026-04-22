@@ -6,6 +6,8 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { subscribeRepayments, addRepayment } from '@/lib/firestore/loans';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 import { formatINR } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,8 +76,9 @@ export default function LoanDetail() {
       toast('Repayment recorded', 'success');
       setRepOpen(false);
       setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
-    } catch (e: any) {
-      toast(e.message, 'error');
+    } catch (e: unknown) {
+      logError('LoanDetail.addRepayment', e);
+      toast(friendlyError(e), 'error');
     } finally {
       setSaving(false);
     }

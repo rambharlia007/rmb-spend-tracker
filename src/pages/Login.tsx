@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { friendlyError } from '@/lib/errorMessages';
 
 export default function Login() {
   const { user, loading, signIn } = useAuth();
@@ -15,10 +16,10 @@ export default function Login() {
     setSigningIn(true);
     try {
       await signIn();
-    } catch (e: any) {
+    } catch (e: unknown) {
       // User cancelled popup → don't show error
-      if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') {
-        setError(e?.message ?? 'Sign-in failed. Please try again.');
+      if ((e as { code?: string })?.code !== 'auth/popup-closed-by-user' && (e as { code?: string })?.code !== 'auth/cancelled-popup-request') {
+        setError(friendlyError(e));
       }
     } finally {
       setSigningIn(false);
