@@ -27,6 +27,8 @@ export default function LoansTaken() {
   const { internalId } = useAuth();
   const navigate = useNavigate();
   const [loans, setLoans] = useState<SharedLoan[] | null>(null);
+  const [accepting, setAccepting] = useState<string | null>(null);  // loanId in-flight
+  const [disputing, setDisputing] = useState<string | null>(null);  // loanId in-flight
 
   useEffect(() => {
     if (!internalId) return;
@@ -35,23 +37,29 @@ export default function LoansTaken() {
 
   async function handleAccept(loanId: string, e: React.MouseEvent) {
     e.stopPropagation();
+    setAccepting(loanId);
     try {
       await acceptLoan(loanId);
       toast('Loan accepted', 'success');
     } catch (err: unknown) {
       logError('LoansTaken.acceptLoan', err);
       toast(friendlyError(err), 'error');
+    } finally {
+      setAccepting(null);
     }
   }
 
   async function handleDispute(loanId: string, e: React.MouseEvent) {
     e.stopPropagation();
+    setDisputing(loanId);
     try {
       await disputeLoan(loanId);
       toast('Loan closed as disputed — create a new one if needed', 'success');
     } catch (err: unknown) {
       logError('LoansTaken.disputeLoan', err);
       toast(friendlyError(err), 'error');
+    } finally {
+      setDisputing(null);
     }
   }
 
@@ -110,11 +118,11 @@ export default function LoansTaken() {
                       </Badge>
                       {l.status === 'unconfirmed' && (
                         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" onClick={(e) => handleAccept(l.id, e)}>
-                            <Check className="h-3 w-3 mr-1" /> Accept
+                          <Button size="sm" onClick={(e) => handleAccept(l.id, e)} disabled={accepting === l.id || disputing === l.id}>
+                            <Check className="h-3 w-3 mr-1" /> {accepting === l.id ? 'Accepting…' : 'Accept'}
                           </Button>
-                          <Button size="sm" variant="outline" onClick={(e) => handleDispute(l.id, e)}>
-                            <AlertTriangle className="h-3 w-3 mr-1" /> Dispute & Close
+                          <Button size="sm" variant="outline" onClick={(e) => handleDispute(l.id, e)} disabled={accepting === l.id || disputing === l.id}>
+                            <AlertTriangle className="h-3 w-3 mr-1" /> {disputing === l.id ? 'Closing…' : 'Dispute & Close'}
                           </Button>
                         </div>
                       )}

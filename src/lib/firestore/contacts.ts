@@ -9,6 +9,7 @@ import {
   updateDoc,
   deleteDoc,
   writeBatch,
+  getDoc,
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import type { Contact } from '@/types';
@@ -70,6 +71,14 @@ export async function addContact(
 
   const trimmedEmail = email.toLowerCase().trim();
 
+  // Read sender's display data from Firestore (not auth.currentUser) — more reliable
+  // especially for users whose displayName may have been updated after sign-in
+  const myDocSnap = await getDoc(doc(db, 'users', myInternalId));
+  const myData = myDocSnap.exists() ? myDocSnap.data() : null;
+  const senderEmail = myData?.email ?? me.email ?? '';
+  const senderName = myData?.displayName ?? me.displayName ?? '';
+  const senderPhoto = myData?.photoURL ?? me.photoURL ?? null;
+
   let profile = await findUserByEmail(trimmedEmail);
 
   if (!profile) {
@@ -112,9 +121,9 @@ export async function addContact(
 
     batch.set(inviteRef, {
       senderInternalId: myInternalId,
-      senderEmail: me.email ?? '',
-      senderName: me.displayName ?? '',
-      senderPhoto: me.photoURL ?? null,
+      senderEmail,
+      senderName,
+      senderPhoto,
       myContactDocId: myContactRef.id,
       createdAt: serverTimestamp(),
     });

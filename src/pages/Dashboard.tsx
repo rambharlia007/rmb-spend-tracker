@@ -8,6 +8,7 @@ import { subscribeCategories } from '@/lib/firestore/categories';
 import { subscribeLoansGiven, subscribeLoansReceived } from '@/lib/firestore/loans';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { logError } from '@/lib/logger';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Receipt, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -56,6 +57,8 @@ export default function Dashboard() {
     );
     return onSnapshot(q, (snap) => {
       setRecentSpends(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Spend, 'id'>) })));
+    }, (err) => {
+      logError('Dashboard.recentSpends', err);
     });
   }, [wsId]);
 

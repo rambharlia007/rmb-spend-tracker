@@ -19,9 +19,11 @@ export default function ProfileSettings() {
   async function handleSave() {
     if (!name.trim()) { toast('Name cannot be empty', 'error'); return; }
     if (!internalId) { toast('User not ready, please wait', 'error'); return; }
+    const currentUser = auth.currentUser;
+    if (!currentUser) { toast('User not ready, please wait', 'error'); return; }
     setSaving(true);
     try {
-      await updateProfile(auth.currentUser!, { displayName: name.trim() });
+      await updateProfile(currentUser, { displayName: name.trim() });
       // Use internalId as doc key — NOT user.uid (which is Google UID)
       await updateDoc(doc(db, 'users', internalId), {
         displayName: name.trim(),

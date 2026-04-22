@@ -203,13 +203,15 @@ async function _bootstrapUser(user: User): Promise<{ internalId: string; workspa
 export async function bootstrapUser(user: User): Promise<{ internalId: string; workspaceId: string }> {
   try {
     return await _bootstrapUser(user);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    const msg = (err as { message?: string })?.message ?? '';
     const isTransient =
-      err?.code === 'unavailable' ||
-      err?.code === 'deadline-exceeded' ||
-      err?.code === 'unauthenticated' ||
-      err?.message?.includes('network') ||
-      err?.message?.includes('offline');
+      code === 'unavailable' ||
+      code === 'deadline-exceeded' ||
+      code === 'unauthenticated' ||
+      msg.includes('network') ||
+      msg.includes('offline');
 
     if (isTransient) {
       await new Promise((r) => setTimeout(r, 1500));
