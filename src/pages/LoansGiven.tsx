@@ -60,16 +60,16 @@ export default function LoansGiven() {
   useEffect(() => { if (!wsId) return; return subscribePaymentSources(wsId, setSources); }, [wsId]);
 
   useEffect(() => {
-    if (!user) return;
-    return subscribeContacts(user.uid, setContacts);
-  }, [user]);
+    if (!internalId) return;
+    return subscribeContacts(internalId, setContacts);
+  }, [internalId]);
 
   // Show all contacts (connected or pending) in loan form — we record the loan regardless
   const selectableContacts = contacts;
 
   async function handleSave() {
     const amt = Math.round(parseFloat(form.amount) * 100) / 100;
-    if (!form.receiverContactId || isNaN(amt) || amt <= 0 || !form.sourceId) {
+    if (!form.receiverContactId || isNaN(amt) || amt <= 0 || !form.sourceId || !wsId) {
       toast('Fill all required fields', 'error');
       return;
     }
@@ -90,7 +90,7 @@ export default function LoansGiven() {
         receiverInternalId,
         receiverEmail: contact.email,
         receiverName: contact.displayName,
-        sourceWorkspaceId: wsId!,
+        sourceWorkspaceId: wsId,
         sourcePaymentSourceId: form.sourceId,
         amount: amt,
         date: new Date(form.date + 'T00:00:00'),

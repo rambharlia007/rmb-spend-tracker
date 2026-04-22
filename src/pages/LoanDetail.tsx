@@ -123,7 +123,8 @@ export default function LoanDetail() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold">Repayments</h2>
-          {loan.status !== 'settled' && (
+          {/* Only the receiver (borrower) can add repayments — giver uses "Mark settled" instead */}
+          {loan.status !== 'settled' && !isGiver && (
             <Button size="sm" onClick={() => setRepOpen(true)}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Add
             </Button>

@@ -8,7 +8,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  getDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import type { Contact } from '@/types';
@@ -51,9 +51,9 @@ export function subscribeContactInvites(myInternalId: string, cb: (items: Contac
  *
  * Flow:
  * 1. Look up email in global /users collection
- * 2a. Found + registered → send invite (connected flow)
- * 2b. Found but not registered (pending_signup stub) → save contact ref
- * 2c. Not found → create stub in /users, save contact ref
+ * 2a. Found + registered → atomically write my contact doc + their invite doc
+ * 2b. Found but not registered (pending_signup stub) → write my contact doc only
+ * 2c. Not found → create stub in /users, write my contact doc only
  *
  * Uses internalId (stable FK) everywhere, never googleUid.
  */
@@ -67,7 +67,6 @@ export async function addContact(
 
   const trimmedEmail = email.toLowerCase().trim();
 
-  // Look up global users table
   let profile = await findUserByEmail(trimmedEmail);
 
   if (!profile) {
@@ -93,12 +92,14 @@ export async function addContact(
     };
   }
 
-  // Save to my contacts subcollection (using my internalId as path)
   const myContactRef = doc(collection(db, 'users', myInternalId, 'contacts'));
 
   if (profile.isRegistered && profile.googleUid) {
-    // Registered user → send invite
-    await setDoc(myContactRef, {
+    // Registered user → atomically write my contact doc + their invite doc
+    const inviteRef = doc(collection(db, 'users', profile.internalId, 'contactInvites'));
+    const batch = writeBatch(db);
+
+    batch.set(myContactRef, {
       email: profile.email,
       displayName: displayName || profile.displayName,
       refUserId: profile.internalId,
@@ -106,9 +107,7 @@ export async function addContact(
       createdAt: serverTimestamp(),
     });
 
-    // Drop invite into their contactInvites subcollection (using their internalId as path)
-    const inviteRef = doc(collection(db, 'users', profile.internalId, 'contactInvites'));
-    await setDoc(inviteRef, {
+    batch.set(inviteRef, {
       senderInternalId: myInternalId,
       senderEmail: me.email ?? '',
       senderName: me.displayName ?? '',
@@ -117,9 +116,10 @@ export async function addContact(
       createdAt: serverTimestamp(),
     });
 
+    await batch.commit();
     return 'invited';
   } else {
-    // Not registered yet → pending
+    // Not registered yet → pending (single write, no invite needed)
     await setDoc(myContactRef, {
       email: profile.email,
       displayName: displayName || profile.displayName,
@@ -127,7 +127,6 @@ export async function addContact(
       status: 'pending_signup',
       createdAt: serverTimestamp(),
     });
-
     return 'pending';
   }
 }
@@ -137,9 +136,13 @@ export async function acceptContactInvite(invite: ContactInvite, myInternalId: s
   const me = auth.currentUser;
   if (!me) throw new Error('Not signed in');
 
-  // Create contact on my side (already connected), using my internalId as path
   const myContactRef = doc(collection(db, 'users', myInternalId, 'contacts'));
-  await setDoc(myContactRef, {
+  const inviteRef = doc(db, 'users', myInternalId, 'contactInvites', invite.id);
+
+  const batch = writeBatch(db);
+
+  // My side: new connected contact
+  batch.set(myContactRef, {
     email: invite.senderEmail,
     displayName: invite.senderName,
     refUserId: invite.senderInternalId,
@@ -147,16 +150,18 @@ export async function acceptContactInvite(invite: ContactInvite, myInternalId: s
     createdAt: serverTimestamp(),
   });
 
-  // Flip sender's contact doc to connected (their path uses their internalId directly)
+  // Sender's side: flip to connected
   if (invite.myContactDocId && invite.senderInternalId) {
-    await updateDoc(
+    batch.update(
       doc(db, 'users', invite.senderInternalId, 'contacts', invite.myContactDocId),
       { status: 'connected' }
     );
   }
 
-  // Delete invite from my contactInvites (using my internalId as path)
-  await deleteDoc(doc(db, 'users', myInternalId, 'contactInvites', invite.id));
+  // Delete the invite
+  batch.delete(inviteRef);
+
+  await batch.commit();
 }
 
 // --- Decline invite ---

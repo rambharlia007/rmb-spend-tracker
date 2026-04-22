@@ -18,31 +18,45 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const lsKey = (uid: string) => `internalId_${uid}`;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [internalId, setInternalId] = useState<string | null>(null);
+  const [internalId, setInternalIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (!u) setInternalId(null);
+      if (!u) {
+        setInternalIdState(null);
+      } else {
+        // Restore cached internalId immediately so consumers don't wait for bootstrap
+        const cached = localStorage.getItem(lsKey(u.uid));
+        if (cached) setInternalIdState(cached);
+      }
       setLoading(false);
     });
     return unsub;
   }, []);
+
+  const setInternalId = (id: string) => {
+    setInternalIdState(id);
+    if (user) localStorage.setItem(lsKey(user.uid), id);
+  };
 
   const signIn = async () => {
     await signInWithPopup(auth, googleProvider);
   };
 
   const signOut = async () => {
-    setInternalId(null);
+    if (user) localStorage.removeItem(lsKey(user.uid));
+    setInternalIdState(null);
     await fbSignOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, internalId, loading, signIn, signOut, setInternalId }}>
+    <AuthContext.Provider value={{ user, internalId, loading, signIn, signOut, setInternalId: setInternalId }}>
       {children}
     </AuthContext.Provider>
   );

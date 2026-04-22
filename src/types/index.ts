@@ -17,7 +17,8 @@ export type UserDoc = {
 export type Workspace = {
   id: string;
   name: string;
-  ownerUid: string;
+  // ownerInternalId stores the internalId (stable FK) of the owner — NOT a Firebase Auth UID
+  ownerInternalId: string;
   members: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -30,6 +31,7 @@ export type Category = {
   color: string;
   active: boolean;
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
 };
 
 export type PaymentSourceType = 'bank' | 'credit_card' | 'wallet' | 'cash' | 'upi';
@@ -49,8 +51,8 @@ export type Spend = {
   amount: number;
   categoryId: string;
   paymentSourceId: string;
-  notes: string;
-  tags: string[];
+  notes?: string;
+  tags?: string[];
   createdBy: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -81,7 +83,7 @@ export type SharedLoan = {
   sourcePaymentSourceId: string;
   amount: number;
   date: Timestamp;
-  notes: string;
+  notes?: string;
   status: LoanStatus;
   outstandingAmount: number;
   createdBy: string;

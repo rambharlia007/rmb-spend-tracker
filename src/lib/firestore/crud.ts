@@ -31,7 +31,8 @@ export function subscribeCollection<T>(
 export async function createInCollection(path: string[], data: Record<string, unknown>) {
   return addDoc(collection(db, path[0], ...path.slice(1)), {
     ...data,
-    createdAt: serverTimestamp()
+    // Don't overwrite a caller-provided createdAt (e.g. during migration)
+    createdAt: data.createdAt ?? serverTimestamp(),
   });
 }
 

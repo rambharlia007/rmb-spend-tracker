@@ -27,23 +27,37 @@ export function subscribeSpends(wsId: string, filters: SpendFilters, cb: (items:
   if (filters.dateFrom) constraints.push(where('date', '>=', Timestamp.fromDate(filters.dateFrom)));
   if (filters.dateTo) constraints.push(where('date', '<=', Timestamp.fromDate(filters.dateTo)));
 
-  // Firestore supports only one `in` per query; we'll client-filter remaining fields
-  const inCategoriesFirst = (filters.categoryIds?.length ?? 0) > 0;
-  if (inCategoriesFirst && filters.categoryIds!.length <= 10) {
+  // Firestore supports only one `in` clause per query (max 10 values).
+  // Strategy: push the first applicable filter to the server (if ≤10 values),
+  // then client-filter everything else. When a filter has >10 values we skip the
+  // server clause entirely and do a full client-side filter — this avoids silently
+  // falling through to a completely different server filter.
+  const catCount = filters.categoryIds?.length ?? 0;
+  const srcCount = filters.paymentSourceIds?.length ?? 0;
+
+  const serverFilterType: 'category' | 'source' | 'none' =
+    catCount > 0 && catCount <= 10 ? 'category' :
+    srcCount > 0 && srcCount <= 10 ? 'source' :
+    'none';
+
+  if (serverFilterType === 'category') {
     constraints.push(where('categoryId', 'in', filters.categoryIds!));
-  } else if ((filters.paymentSourceIds?.length ?? 0) > 0 && filters.paymentSourceIds!.length <= 10) {
+  } else if (serverFilterType === 'source') {
     constraints.push(where('paymentSourceId', 'in', filters.paymentSourceIds!));
   }
 
   const q = query(collection(db, 'workspaces', wsId, 'spends'), ...constraints);
   return onSnapshot(q, (snap) => {
     let rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Spend, 'id'>) }));
-    // Client-side filter for the condition we couldn't push to server
-    if (inCategoriesFirst && (filters.paymentSourceIds?.length ?? 0) > 0) {
-      rows = rows.filter((r) => filters.paymentSourceIds!.includes(r.paymentSourceId));
-    } else if (!inCategoriesFirst && (filters.categoryIds?.length ?? 0) > 0) {
+
+    // Client-side filter for anything not pushed to the server
+    if (serverFilterType !== 'category' && catCount > 0) {
       rows = rows.filter((r) => filters.categoryIds!.includes(r.categoryId));
     }
+    if (serverFilterType !== 'source' && srcCount > 0) {
+      rows = rows.filter((r) => filters.paymentSourceIds!.includes(r.paymentSourceId));
+    }
+
     cb(rows);
   });
 }

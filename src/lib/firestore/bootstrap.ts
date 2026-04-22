@@ -65,18 +65,22 @@ async function findUserDocByEmail(email: string) {
 }
 
 /**
- * Bootstrap user on sign-in. Wrapped with retry logic for transient errors.
+ * Bootstrap user on sign-in.
  *
  * Logic:
- * 1. Check if /users doc with googleUid already exists → already bootstrapped
- * 2. Check if /users doc with same email exists (pre-created as pending_signup contact)
- *    → update that doc with googleUid, isRegistered: true, create workspace
- * 3. Neither → create fresh /users doc with new internalId
+ * 1. Already registered? findByGoogleUid → found → seed + return early. Done.
+ * 2. Email lookup found a doc with currentWorkspaceId already set → registered user
+ *    with missing fields (e.g. googleUid was null due to old schema / interrupted write).
+ *    Patch the missing fields only — NEVER create a new workspace.
+ * 3. Email lookup found a genuine unregistered stub (no currentWorkspaceId, no googleUid)
+ *    → atomically create workspace + update stub doc via writeBatch.
+ * 4. No doc at all → atomically create workspace + new user doc via writeBatch.
  *
- * Returns { internalId, workspaceId }
+ * All workspace+user writes are in a single writeBatch so a crash/retry can never
+ * leave partial state or create a duplicate workspace.
  */
 async function _bootstrapUser(user: User): Promise<{ internalId: string; workspaceId: string }> {
-  // 1. Already registered? (has googleUid field)
+  // ── Step 1: Already fully registered ───────────────────────────────────────
   const byGoogleUid = await findUserDocByGoogleUid(user.uid);
   if (byGoogleUid) {
     const wsId = byGoogleUid.data.currentWorkspaceId as string;
@@ -84,17 +88,36 @@ async function _bootstrapUser(user: User): Promise<{ internalId: string; workspa
     return { internalId: byGoogleUid.internalId, workspaceId: wsId };
   }
 
-  // 2. Pre-created stub by another user (pending_signup)?
+  // ── Step 2/3/4: Email lookup ────────────────────────────────────────────────
   const byEmail = await findUserDocByEmail(user.email ?? '');
 
-  let internalId: string;
-  let userRef;
+  // Case 2: Doc exists AND already has a workspace → registered user with missing fields.
+  // Just patch — never create a new workspace.
+  const existingWsId = byEmail?.data.currentWorkspaceId as string | null | undefined;
+  if (byEmail && existingWsId) {
+    const userRef = doc(db, 'users', byEmail.internalId);
+    await updateDoc(userRef, {
+      googleUid: user.uid,
+      displayName: user.displayName ?? byEmail.data.displayName ?? '',
+      photoURL: user.photoURL ?? byEmail.data.photoURL ?? null,
+      isRegistered: true,
+      // Ensure internalId field is present (old docs may be missing it)
+      internalId: byEmail.internalId,
+    });
+    await seedWorkspaceData(existingWsId);
+    return { internalId: byEmail.internalId, workspaceId: existingWsId };
+  }
 
-  // Only reuse stub if it is genuinely unregistered (googleUid is null/missing)
+  // Case 3 or 4: Genuine unregistered stub OR brand new user.
+  // Determine internalId and userRef before the batch.
   const isUnregisteredStub =
     byEmail != null &&
     (byEmail.data.isRegistered === false || !byEmail.data.isRegistered) &&
-    (byEmail.data.googleUid == null || byEmail.data.googleUid === '');
+    (byEmail.data.googleUid == null || byEmail.data.googleUid === '') &&
+    !existingWsId;
+
+  let internalId: string;
+  let userRef;
 
   if (isUnregisteredStub) {
     internalId = byEmail!.internalId;
@@ -104,28 +127,31 @@ async function _bootstrapUser(user: User): Promise<{ internalId: string; workspa
     internalId = userRef.id;
   }
 
-  // Create workspace
+  // Create workspace ref — but don't write yet (batch below)
   const wsRef = doc(collection(db, 'workspaces'));
-  await setDoc(wsRef, {
+
+  // ── Atomic batch: workspace + user doc ─────────────────────────────────────
+  const batch = writeBatch(db);
+
+  batch.set(wsRef, {
     name: `${user.displayName?.split(' ')[0] ?? 'My'}'s Workspace`,
-    ownerUid: internalId,
+    ownerInternalId: internalId,
     members: [internalId],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   if (isUnregisteredStub) {
-    // Update existing stub doc — always set googleUid: null explicitly before so rule allows it
-    await updateDoc(userRef, {
+    batch.update(userRef, {
       googleUid: user.uid,
       displayName: user.displayName ?? byEmail!.data.displayName ?? '',
       photoURL: user.photoURL ?? null,
       isRegistered: true,
+      internalId,
       currentWorkspaceId: wsRef.id,
     });
   } else {
-    // Create fresh doc
-    await setDoc(userRef, {
+    batch.set(userRef, {
       internalId,
       googleUid: user.uid,
       email: (user.email ?? '').toLowerCase(),
@@ -137,6 +163,7 @@ async function _bootstrapUser(user: User): Promise<{ internalId: string; workspa
     });
   }
 
+  await batch.commit();
   await seedWorkspaceData(wsRef.id);
   return { internalId, workspaceId: wsRef.id };
 }
@@ -146,7 +173,6 @@ export async function bootstrapUser(user: User): Promise<{ internalId: string; w
   try {
     return await _bootstrapUser(user);
   } catch (err: any) {
-    // Retry once for transient errors (network, token expiry race)
     const isTransient =
       err?.code === 'unavailable' ||
       err?.code === 'deadline-exceeded' ||
@@ -155,7 +181,6 @@ export async function bootstrapUser(user: User): Promise<{ internalId: string; w
       err?.message?.includes('offline');
 
     if (isTransient) {
-      // Wait 1.5s then retry
       await new Promise((r) => setTimeout(r, 1500));
       return await _bootstrapUser(user);
     }

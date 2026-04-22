@@ -29,8 +29,8 @@ export default function WorkspaceSettings() {
   const [saving, setSaving] = useState(false);
   const [memberNames, setMemberNames] = useState<Record<string, string>>({});
 
-  // isOwner: compare internalId (stable FK) with workspace.ownerUid (stored as internalId)
-  const isOwner = !!internalId && workspace?.ownerUid === internalId;
+  // isOwner: compare internalId (stable FK) with workspace.ownerInternalId
+  const isOwner = !!internalId && workspace?.ownerInternalId === internalId;
 
   // Look up display names for all members
   useEffect(() => {
@@ -86,12 +86,12 @@ export default function WorkspaceSettings() {
             <div key={memberId} className="flex items-center gap-2 text-sm">
               <User className="h-4 w-4 text-muted-foreground shrink-0" />
               <span className="flex-1 truncate">{memberNames[memberId] ?? '…'}</span>
-              {memberId === workspace.ownerUid && (
+              {memberId === workspace.ownerInternalId && (
                 <Badge variant="secondary" className="text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 shrink-0">
                   <Crown className="h-3 w-3 mr-1" /> Owner
                 </Badge>
               )}
-              {memberId === internalId && memberId !== workspace.ownerUid && (
+              {memberId === internalId && memberId !== workspace.ownerInternalId && (
                 <Badge variant="secondary" className="shrink-0">You</Badge>
               )}
             </div>

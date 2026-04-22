@@ -38,7 +38,7 @@ service cloud.firestore {
     }
 
     // Workspaces — members identified by internalId stored in members array
-    // For now workspace ownerUid and members store internalId
+    // workspace ownerInternalId and members store internalId
     match /workspaces/{wsId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();

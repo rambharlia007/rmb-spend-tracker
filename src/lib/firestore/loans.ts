@@ -149,9 +149,12 @@ export async function addRepayment(
       createdAt: serverTimestamp(),
     });
 
+    // Only auto-settle if the loan was explicitly accepted by the receiver.
+    // Disputed or unconfirmed loans must be resolved manually — never auto-settle them.
+    const shouldSettle = newOutstanding === 0 && loan.status === 'accepted';
     tx.update(loanRef, {
       outstandingAmount: newOutstanding,
-      status: newOutstanding === 0 ? 'settled' : loan.status,
+      status: shouldSettle ? 'settled' : loan.status,
       updatedAt: serverTimestamp(),
     });
   });
