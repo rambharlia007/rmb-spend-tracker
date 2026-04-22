@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useAuth } from '@/hooks/useAuth';
@@ -6,13 +6,15 @@ import { formatINR } from '@/lib/utils';
 import { subscribeSpends } from '@/lib/firestore/spends';
 import { subscribeCategories } from '@/lib/firestore/categories';
 import { subscribeLoansGiven, subscribeLoansReceived } from '@/lib/firestore/loans';
+import { subscribeInvestments, subscribeInvestmentTypes } from '@/lib/firestore/investments';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { logError } from '@/lib/logger';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Receipt, AlertCircle } from 'lucide-react';
+import { Receipt, AlertCircle, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Spend, Category, SharedLoan } from '@/types';
+import type { Investment, InvestmentType } from '@/types';
 
 function getThisMonthRange() {
   const now = new Date();
@@ -31,6 +33,8 @@ export default function Dashboard() {
   const [catMap, setCatMap] = useState<Map<string, Category>>(new Map());
   const [loansGiven, setLoansGiven] = useState<SharedLoan[]>([]);
   const [loansReceived, setLoansReceived] = useState<SharedLoan[]>([]);
+  const [investments, setInvestments] = useState<Investment[] | null>(null);
+  const [investmentTypes, setInvestmentTypes] = useState<InvestmentType[]>([]);
 
   const wsId = workspace?.id;
 
@@ -71,11 +75,34 @@ export default function Dashboard() {
     return subscribeLoansReceived(internalId, setLoansReceived);
   }, [internalId]);
 
+  useEffect(() => {
+    if (!wsId) return;
+    const u1 = subscribeInvestments(wsId, setInvestments, (err) => logError('Dashboard.investments', err));
+    const u2 = subscribeInvestmentTypes(wsId, setInvestmentTypes);
+    return () => { u1(); u2(); };
+  }, [wsId]);
+
   const monthTotal = monthSpends?.reduce((sum, s) => sum + s.amount, 0) ?? 0;
   const loading = monthSpends === null || recentSpends === null;
   const loansGivenOutstanding = loansGiven.filter((l) => l.status !== 'settled' && l.status !== 'closed' && l.status !== 'disputed').reduce((s, l) => s + l.outstandingAmount, 0);
   const loansReceivedOutstanding = loansReceived.filter((l) => l.status !== 'settled' && l.status !== 'closed' && l.status !== 'disputed').reduce((s, l) => s + l.outstandingAmount, 0);
   const pendingCount = loansReceived.filter((l) => l.status === 'unconfirmed').length;
+
+  const typeMap = useMemo(() => new Map(investmentTypes.map((t) => [t.id, t])), [investmentTypes]);
+  const investmentGrandTotal = useMemo(() => investments?.reduce((s, i) => s + i.amount, 0) ?? 0, [investments]);
+  const investmentSummary = useMemo(() => {
+    if (!investments) return [];
+    const byType = new Map<string, { type: InvestmentType | undefined; total: number }>();
+    for (const inv of investments) {
+      const entry = byType.get(inv.typeId) ?? { type: typeMap.get(inv.typeId), total: 0 };
+      entry.total += inv.amount;
+      byType.set(inv.typeId, entry);
+    }
+    return Array.from(byType.entries())
+      .sort(([, a], [, b]) => b.total - a.total)
+      .slice(0, 4)
+      .map(([typeId, { type, total }]) => ({ typeId, type, total }));
+  }, [investments, typeMap]);
 
   const stats = [
     { label: format(new Date(), 'MMM yyyy'), sublabel: 'Total spent', value: loading ? null : formatINR(monthTotal) },
@@ -119,6 +146,54 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* Investment portfolio */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold">Portfolio</h2>
+          <Link to="/investments" className="text-xs text-primary hover:underline">View all →</Link>
+        </div>
+        {investments === null ? (
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+          </div>
+        ) : investments.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-center">
+            <TrendingUp className="h-7 w-7 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No investments yet.</p>
+            <Link to="/investments" className="text-sm text-primary hover:underline mt-1 inline-block">Add your first investment →</Link>
+          </div>
+        ) : (
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Total portfolio value</span>
+              <span className="text-lg font-bold tabular-nums">{formatINR(investmentGrandTotal)}</span>
+            </div>
+            <div className="space-y-2">
+              {investmentSummary.map(({ typeId, type, total }) => {
+                const pct = investmentGrandTotal > 0 ? (total / investmentGrandTotal) * 100 : 0;
+                return (
+                  <div key={typeId} className="flex items-center gap-3">
+                    <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-sm shrink-0">
+                      {type?.icon ?? '💼'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium truncate">{type?.name ?? 'Unknown'}</span>
+                        <span className="tabular-nums font-semibold ml-2 shrink-0">{formatINR(total)}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pct.toFixed(1)}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground w-9 text-right tabular-nums shrink-0">{pct.toFixed(0)}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Recent spends */}
       <section>
