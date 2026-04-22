@@ -28,12 +28,13 @@ const SETTINGS_NAV = [
   { to: '/settings/backup', label: 'Backup & Data', icon: Database },
 ];
 
-// Primary 4 tabs always visible on mobile
+// Primary 5 tabs always visible on mobile
 const MOBILE_PRIMARY = [
   { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
   { to: '/spends', label: 'Spends', icon: Receipt },
   { to: '/loans-given', label: 'Loans', icon: HandCoins },
   { to: '/contacts', label: 'Contacts', icon: Users },
+  { to: '/notes', label: 'Notes', icon: StickyNote },
 ];
 
 // "More" drawer sections
@@ -41,7 +42,6 @@ const MORE_SECTIONS = [
   {
     title: 'Personal',
     items: [
-      { to: '/notes', label: 'Notes', icon: StickyNote },
       { to: '/investments', label: 'Investments', icon: TrendingUp },
     ],
   },

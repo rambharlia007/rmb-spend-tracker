@@ -341,8 +341,11 @@ export default function Investments() {
                 <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none">None</SelectItem>
-                  {contacts.filter((c) => c.status === 'connected' && c.refUserId).map((c) => (
-                    <SelectItem key={c.refUserId!} value={c.refUserId!}>
+                  {contacts.length === 0 && (
+                    <SelectItem value="__no_contacts" disabled>No contacts yet — add from Contacts page</SelectItem>
+                  )}
+                  {contacts.map((c) => (
+                    <SelectItem key={c.id} value={c.refUserId ?? c.id}>
                       {c.displayName || c.email}
                     </SelectItem>
                   ))}

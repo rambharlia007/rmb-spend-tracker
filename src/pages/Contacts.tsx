@@ -164,12 +164,12 @@ export default function Contacts() {
           <h2 className="text-sm font-semibold mb-2 text-amber-600">Pending Invites</h2>
           <div className="divide-y rounded-lg border overflow-hidden">
             {invites.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between px-4 py-3 bg-amber-50 dark:bg-amber-950/20">
+              <div key={inv.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 py-3 bg-amber-50 dark:bg-amber-950/20">
                 <div>
                   <div className="text-sm font-medium">{inv.senderName || inv.senderEmail}</div>
                   <div className="text-xs text-muted-foreground">{inv.senderEmail}</div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 self-end sm:self-auto shrink-0">
                   <Button size="sm" onClick={() => handleAccept(inv)}>
                     <Check className="h-3 w-3 mr-1" /> Accept
                   </Button>
