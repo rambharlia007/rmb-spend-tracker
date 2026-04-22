@@ -48,8 +48,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setInternalId(internalId);
         setWorkspaceId(wsId);
-        // Don't set loading=false here — let the onSnapshot do it
-        // But set a safety timeout in case onSnapshot never fires (e.g. offline)
+        // Set loading=false now — onSnapshot will update workspace data when it fires.
+        // This prevents the 8s timeout being the only escape hatch on fast unmounts.
+        setLoading(false);
       })
       .catch((e: any) => {
         if (cancelled) return;
@@ -89,9 +90,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       (snap) => {
         if (snap.exists()) {
           setWorkspace({ id: snap.id, ...(snap.data() as Omit<Workspace, 'id'>) });
+        } else {
+          // Workspace doc was deleted — clear stale data and surface an error
+          setWorkspace(null);
+          setError('Workspace not found. Please contact support.');
         }
         setLoading(false);
-        setError(null);
+        setError((prev) => snap.exists() ? null : prev);
       },
       (e) => {
         // Permission errors on snapshot — likely transient token issue, surface it

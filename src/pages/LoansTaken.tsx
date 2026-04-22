@@ -15,7 +15,8 @@ import { useNavigate } from 'react-router-dom';
 const STATUS_COLORS: Record<string, string> = {
   unconfirmed: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30',
   accepted: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30',
-  disputed: 'text-red-600 bg-red-100 dark:bg-red-900/30',
+  disputed: 'text-red-600 bg-red-100 dark:bg-red-900/30',   // legacy
+  closed: 'text-red-600 bg-red-100 dark:bg-red-900/30',
   settled: 'text-green-600 bg-green-100 dark:bg-green-900/30',
 };
 
@@ -44,14 +45,15 @@ export default function LoansTaken() {
     e.stopPropagation();
     try {
       await disputeLoan(loanId);
-      toast('Loan marked as disputed');
+      toast('Loan closed as disputed — create a new one if needed', 'success');
     } catch (err: any) {
       toast(err.message, 'error');
     }
   }
 
-  const activeLoans = loans?.filter((l) => l.status !== 'settled') ?? [];
-  const settledLoans = loans?.filter((l) => l.status === 'settled') ?? [];
+  const isTerminal = (l: SharedLoan) => l.status === 'settled' || l.status === 'closed' || l.status === 'disputed';
+  const activeLoans = loans?.filter((l) => !isTerminal(l)) ?? [];
+  const closedLoans = loans?.filter((l) => isTerminal(l)) ?? [];
   const totalOutstanding = activeLoans.reduce((s, l) => s + l.outstandingAmount, 0);
   const pendingConfirmation = activeLoans.filter((l) => l.status === 'unconfirmed');
 
@@ -99,14 +101,16 @@ export default function LoansTaken() {
                       <div className="text-xs text-muted-foreground">of {formatINR(l.amount)}</div>
                     )}
                     <div className="flex items-center justify-between mt-2">
-                      <Badge variant="secondary" className={STATUS_COLORS[l.status]}>{l.status}</Badge>
+                      <Badge variant="secondary" className={STATUS_COLORS[l.status]}>
+                        {l.status === 'closed' || l.status === 'disputed' ? 'Disputed' : l.status}
+                      </Badge>
                       {l.status === 'unconfirmed' && (
                         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" onClick={(e) => handleAccept(l.id, e)}>
                             <Check className="h-3 w-3 mr-1" /> Accept
                           </Button>
                           <Button size="sm" variant="outline" onClick={(e) => handleDispute(l.id, e)}>
-                            <AlertTriangle className="h-3 w-3 mr-1" /> Dispute
+                            <AlertTriangle className="h-3 w-3 mr-1" /> Dispute & Close
                           </Button>
                         </div>
                       )}
@@ -116,11 +120,11 @@ export default function LoansTaken() {
               </div>
             </section>
           )}
-          {settledLoans.length > 0 && (
+          {closedLoans.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold mb-2 text-muted-foreground">Settled</h2>
+              <h2 className="text-sm font-semibold mb-2 text-muted-foreground">History</h2>
               <div className="space-y-2 opacity-60">
-                {settledLoans.map((l) => (
+                {closedLoans.map((l) => (
                   <div
                     key={l.id}
                     onClick={() => navigate(`/loan/${l.id}`)}
@@ -132,7 +136,9 @@ export default function LoansTaken() {
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <div className="text-xs text-muted-foreground">{format(l.date.toDate(), 'dd MMM yyyy')}</div>
-                      <Badge variant="secondary" className={STATUS_COLORS[l.status]}>settled</Badge>
+                      <Badge variant="secondary" className={STATUS_COLORS[l.status]}>
+                        {l.status === 'closed' || l.status === 'disputed' ? 'Disputed' : 'Settled'}
+                      </Badge>
                     </div>
                   </div>
                 ))}

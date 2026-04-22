@@ -33,7 +33,7 @@ export function subscribeLoansGiven(myInternalId: string, cb: (items: SharedLoan
   );
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SharedLoan, 'id'>) })));
-  });
+  }, (err) => console.error('subscribeLoansGiven error:', err.message));
 }
 
 // --- Subscribe loans received (I am receiver, matched by internalId) ---
@@ -45,7 +45,7 @@ export function subscribeLoansReceived(myInternalId: string, cb: (items: SharedL
   );
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SharedLoan, 'id'>) })));
-  });
+  }, (err) => console.error('subscribeLoansReceived error:', err.message));
 }
 
 // --- Subscribe repayments for a loan ---
@@ -56,7 +56,7 @@ export function subscribeRepayments(loanId: string, cb: (items: Repayment[]) => 
   );
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Repayment, 'id'>) })));
-  });
+  }, (err) => console.error('subscribeRepayments error:', err.message));
 }
 
 // --- Create loan ---
@@ -105,10 +105,11 @@ export async function acceptLoan(loanId: string) {
   });
 }
 
-// --- Receiver disputes loan ---
+// --- Receiver disputes loan — permanently closes it, no further action possible ---
 export async function disputeLoan(loanId: string) {
   await updateDoc(doc(db, 'sharedLoans', loanId), {
-    status: 'disputed',
+    status: 'closed',
+    outstandingAmount: 0,
     updatedAt: serverTimestamp(),
   });
 }

@@ -94,7 +94,7 @@ export async function addContact(
 
   const myContactRef = doc(collection(db, 'users', myInternalId, 'contacts'));
 
-  if (profile.isRegistered && profile.googleUid) {
+  if (profile.isRegistered) {
     // Registered user → atomically write my contact doc + their invite doc
     const inviteRef = doc(collection(db, 'users', profile.internalId, 'contactInvites'));
     const batch = writeBatch(db);
@@ -136,7 +136,8 @@ export async function acceptContactInvite(invite: ContactInvite, myInternalId: s
   const me = auth.currentUser;
   if (!me) throw new Error('Not signed in');
 
-  const myContactRef = doc(collection(db, 'users', myInternalId, 'contacts'));
+  // Use senderInternalId as the doc ID — makes the write idempotent (safe on double-tap/retry)
+  const myContactRef = doc(db, 'users', myInternalId, 'contacts', invite.senderInternalId);
   const inviteRef = doc(db, 'users', myInternalId, 'contactInvites', invite.id);
 
   const batch = writeBatch(db);

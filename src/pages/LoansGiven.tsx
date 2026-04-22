@@ -24,7 +24,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 const STATUS_COLORS: Record<string, string> = {
   unconfirmed: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30',
   accepted: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30',
-  disputed: 'text-red-600 bg-red-100 dark:bg-red-900/30',
+  disputed: 'text-red-600 bg-red-100 dark:bg-red-900/30',   // legacy
+  closed: 'text-red-600 bg-red-100 dark:bg-red-900/30',
   settled: 'text-green-600 bg-green-100 dark:bg-green-900/30',
 };
 
@@ -120,8 +121,9 @@ export default function LoansGiven() {
     }
   }
 
-  const activeLoans = loans?.filter((l) => l.status !== 'settled') ?? [];
-  const settledLoans = loans?.filter((l) => l.status === 'settled') ?? [];
+  const isTerminal = (l: SharedLoan) => l.status === 'settled' || l.status === 'closed' || l.status === 'disputed';
+  const activeLoans = loans?.filter((l) => !isTerminal(l)) ?? [];
+  const closedLoans = loans?.filter((l) => isTerminal(l)) ?? [];
   const totalOutstanding = activeLoans.reduce((s, l) => s + l.outstandingAmount, 0);
 
   return (
@@ -151,10 +153,10 @@ export default function LoansGiven() {
               <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} onSettle={(l) => setSettleTarget(l)} />
             </section>
           )}
-          {settledLoans.length > 0 && (
+          {closedLoans.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold mb-2 text-muted-foreground">Settled</h2>
-              <LoanList loans={settledLoans} onSelect={(id) => navigate(`/loan/${id}`)} dim />
+              <h2 className="text-sm font-semibold mb-2 text-muted-foreground">History</h2>
+              <LoanList loans={closedLoans} onSelect={(id) => navigate(`/loan/${id}`)} dim />
             </section>
           )}
         </>
@@ -249,8 +251,10 @@ function LoanList({ loans, onSelect, onSettle, dim }: { loans: SharedLoan[]; onS
           </button>
           {/* Bottom row: badge + settle */}
           <div className="flex items-center justify-between mt-2">
-            <Badge variant="secondary" className={STATUS_COLORS[l.status]}>{l.status}</Badge>
-            {onSettle && (
+            <Badge variant="secondary" className={STATUS_COLORS[l.status]}>
+              {l.status === 'closed' || l.status === 'disputed' ? 'Disputed' : l.status}
+            </Badge>
+            {onSettle && l.status === 'accepted' && (
               <button
                 onClick={() => onSettle(l)}
                 className="text-xs font-medium text-primary underline underline-offset-2"

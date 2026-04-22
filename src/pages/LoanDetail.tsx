@@ -20,7 +20,8 @@ import type { Repayment } from '@/lib/firestore/loans';
 const STATUS_COLORS: Record<string, string> = {
   unconfirmed: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30',
   accepted: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30',
-  disputed: 'text-red-600 bg-red-100 dark:bg-red-900/30',
+  disputed: 'text-red-600 bg-red-100 dark:bg-red-900/30',   // legacy — same as closed
+  closed: 'text-red-600 bg-red-100 dark:bg-red-900/30',
   settled: 'text-green-600 bg-green-100 dark:bg-green-900/30',
 };
 
@@ -82,6 +83,8 @@ export default function LoanDetail() {
 
   if (loan === 'loading') return <div className="p-6 space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>;
   if (!loan) return <div className="p-6 text-destructive">Loan not found.</div>;
+  // Wait for internalId before computing role — prevents wrong button shown and null FK writes
+  if (!internalId) return <div className="p-6 space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>;
 
   const isGiver = loan.giverInternalId === internalId;
   const totalPaid = repayments.reduce((s, r) => s + r.amount, 0);
@@ -96,7 +99,9 @@ export default function LoanDetail() {
       <div className="rounded-lg border p-4 space-y-1 bg-card">
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">{isGiver ? 'Lent to' : 'Borrowed from'}</div>
-          <Badge variant="secondary" className={STATUS_COLORS[loan.status]}>{loan.status}</Badge>
+          <Badge variant="secondary" className={STATUS_COLORS[loan.status]}>
+            {loan.status === 'closed' || loan.status === 'disputed' ? 'Disputed' : loan.status}
+          </Badge>
         </div>
         <div className="font-semibold">{isGiver ? (loan.receiverName || loan.receiverEmail) : (loan.giverName || loan.giverEmail)}</div>
         <div className="text-xs text-muted-foreground">{format(loan.date.toDate(), 'dd MMM yyyy')}{loan.notes ? ` · ${loan.notes}` : ''}</div>
@@ -123,8 +128,8 @@ export default function LoanDetail() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold">Repayments</h2>
-          {/* Only the receiver (borrower) can add repayments — giver uses "Mark settled" instead */}
-          {loan.status !== 'settled' && !isGiver && (
+          {/* Only the receiver (borrower) can add repayments — not on settled or closed/disputed loans */}
+          {loan.status !== 'settled' && loan.status !== 'closed' && loan.status !== 'disputed' && !isGiver && (
             <Button size="sm" onClick={() => setRepOpen(true)}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Add
             </Button>

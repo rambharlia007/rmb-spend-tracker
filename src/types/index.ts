@@ -68,7 +68,9 @@ export type Contact = {
   createdAt: Timestamp;
 };
 
-export type LoanStatus = 'unconfirmed' | 'accepted' | 'disputed' | 'settled';
+// 'closed' = receiver disputed → loan permanently closed, no further action.
+// 'disputed' kept for backward compat with existing DB docs — treated identically to 'closed' in UI.
+export type LoanStatus = 'unconfirmed' | 'accepted' | 'disputed' | 'settled' | 'closed';
 
 export type SharedLoan = {
   id: string;

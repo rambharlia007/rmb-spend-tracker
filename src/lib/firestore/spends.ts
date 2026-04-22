@@ -12,7 +12,7 @@ import {
   updateDoc,
   deleteDoc
 } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 import type { Spend } from '@/types';
 
 export type SpendFilters = {
@@ -64,10 +64,10 @@ export function subscribeSpends(wsId: string, filters: SpendFilters, cb: (items:
 
 export async function createSpend(
   wsId: string,
+  myInternalId: string,
   data: { date: Date; amount: number; categoryId: string; paymentSourceId: string; notes: string; tags?: string[] }
 ) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error('Not signed in');
+  if (!myInternalId) throw new Error('Not signed in');
   return addDoc(collection(db, 'workspaces', wsId, 'spends'), {
     date: Timestamp.fromDate(data.date),
     amount: data.amount,
@@ -75,7 +75,7 @@ export async function createSpend(
     paymentSourceId: data.paymentSourceId,
     notes: data.notes,
     tags: data.tags ?? [],
-    createdBy: uid,
+    createdBy: myInternalId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });

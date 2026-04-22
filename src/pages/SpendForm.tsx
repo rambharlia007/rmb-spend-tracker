@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspace } from '@/hooks/useWorkspace';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { createSpend, updateSpend } from '@/lib/firestore/spends';
 import type { Category, PaymentSource, Spend } from '@/types';
@@ -25,6 +26,7 @@ export function SpendForm({
   sources: PaymentSource[];
 }) {
   const { workspaceId } = useWorkspace();
+  const { internalId } = useAuth();
   const { toast } = useToast();
   const activeCats = categories.filter((c) => c.active);
   const activeSrcs = sources.filter((s) => s.active);
@@ -54,7 +56,7 @@ export function SpendForm({
   }, [open, editing]);
 
   const save = async () => {
-    if (!workspaceId) return;
+    if (!workspaceId || !internalId) return;
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
     if (!categoryId) { toast('Select a category', 'error'); return; }
@@ -74,7 +76,7 @@ export function SpendForm({
         await updateSpend(workspaceId, editing.id, payload);
         toast('Spend updated', 'success');
       } else {
-        await createSpend(workspaceId, payload);
+        await createSpend(workspaceId, internalId, payload);
         toast('Spend added', 'success');
       }
       onOpenChange(false);

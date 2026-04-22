@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -22,12 +22,14 @@ const lsKey = (uid: string) => `internalId_${uid}`;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const userRef = useRef<User | null>(null);
   const [internalId, setInternalIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      userRef.current = u;
       if (!u) {
         setInternalIdState(null);
       } else {
@@ -40,10 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, []);
 
-  const setInternalId = (id: string) => {
+  // useCallback with ref — avoids stale closure over `user` state in async bootstrap callbacks
+  const setInternalId = useCallback((id: string) => {
     setInternalIdState(id);
-    if (user) localStorage.setItem(lsKey(user.uid), id);
-  };
+    if (userRef.current) localStorage.setItem(lsKey(userRef.current.uid), id);
+  }, []);
 
   const signIn = async () => {
     await signInWithPopup(auth, googleProvider);

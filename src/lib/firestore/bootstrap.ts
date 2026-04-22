@@ -89,7 +89,36 @@ async function _bootstrapUser(user: User): Promise<{ internalId: string; workspa
   }
 
   // ── Step 2/3/4: Email lookup ────────────────────────────────────────────────
-  const byEmail = await findUserDocByEmail(user.email ?? '');
+  // Guard: Google always provides email, but other auth providers may not.
+  // Skip email lookup entirely for non-email users — go straight to Case 4.
+  if (!user.email) {
+    const wsRef = doc(collection(db, 'workspaces'));
+    const userRef = doc(collection(db, 'users'));
+    const internalId = userRef.id;
+    const batch = writeBatch(db);
+    batch.set(wsRef, {
+      name: `${user.displayName?.split(' ')[0] ?? 'My'}'s Workspace`,
+      ownerInternalId: internalId,
+      members: [internalId],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(userRef, {
+      internalId,
+      googleUid: user.uid,
+      email: '',
+      displayName: user.displayName ?? '',
+      photoURL: user.photoURL ?? null,
+      isRegistered: true,
+      currentWorkspaceId: wsRef.id,
+      createdAt: serverTimestamp(),
+    });
+    await batch.commit();
+    await seedWorkspaceData(wsRef.id);
+    return { internalId, workspaceId: wsRef.id };
+  }
+
+  const byEmail = await findUserDocByEmail(user.email);
 
   // Case 2: Doc exists AND already has a workspace → registered user with missing fields.
   // Just patch — never create a new workspace.

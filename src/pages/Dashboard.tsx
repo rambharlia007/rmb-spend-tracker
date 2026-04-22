@@ -70,8 +70,8 @@ export default function Dashboard() {
 
   const monthTotal = monthSpends?.reduce((sum, s) => sum + s.amount, 0) ?? 0;
   const loading = monthSpends === null || recentSpends === null;
-  const loansGivenOutstanding = loansGiven.filter((l) => l.status !== 'settled').reduce((s, l) => s + l.outstandingAmount, 0);
-  const loansReceivedOutstanding = loansReceived.filter((l) => l.status !== 'settled').reduce((s, l) => s + l.outstandingAmount, 0);
+  const loansGivenOutstanding = loansGiven.filter((l) => l.status !== 'settled' && l.status !== 'closed' && l.status !== 'disputed').reduce((s, l) => s + l.outstandingAmount, 0);
+  const loansReceivedOutstanding = loansReceived.filter((l) => l.status !== 'settled' && l.status !== 'closed' && l.status !== 'disputed').reduce((s, l) => s + l.outstandingAmount, 0);
   const pendingCount = loansReceived.filter((l) => l.status === 'unconfirmed').length;
 
   const stats = [
@@ -183,14 +183,14 @@ function CategoryBreakdown({
     entry.amount += s.amount;
     bycat.set(s.categoryId, entry);
   }
-  const sorted = Array.from(bycat.values()).sort((a, b) => b.amount - a.amount);
+  const sorted = Array.from(bycat.entries()).sort(([, a], [, b]) => b.amount - a.amount);
 
   return (
     <div className="space-y-3">
-      {sorted.map(({ cat, amount }) => {
+      {sorted.map(([categoryId, { cat, amount }]) => {
         const pct = total > 0 ? (amount / total) * 100 : 0;
         return (
-          <div key={cat?.id ?? cat?.name ?? amount} className="flex items-center gap-3">
+          <div key={categoryId} className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center text-base shrink-0">
               {cat?.icon ?? '💸'}
             </div>
