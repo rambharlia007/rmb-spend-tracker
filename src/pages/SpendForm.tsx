@@ -47,7 +47,7 @@ export function SpendForm({
       setDate(format(editing.date.toDate(), 'yyyy-MM-dd'));
       setCategoryId(editing.categoryId);
       setPaymentSourceId(editing.paymentSourceId);
-      setNotes(editing.notes);
+      setNotes(editing.notes ?? '');
     } else {
       setAmount('');
       setDate(format(new Date(), 'yyyy-MM-dd'));
