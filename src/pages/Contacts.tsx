@@ -202,9 +202,9 @@ export default function Contacts() {
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={c.status} />
-                  <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(c)}>
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
+                <Button size="icon" variant="ghost" onClick={() => setDeleteTarget(c)}>
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
                 </div>
               </div>
             ))}

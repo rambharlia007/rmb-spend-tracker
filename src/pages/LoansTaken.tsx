@@ -122,7 +122,7 @@ export default function LoansTaken() {
                             <Check className="h-3 w-3 mr-1" /> {accepting === l.id ? 'Accepting…' : 'Accept'}
                           </Button>
                           <Button size="sm" variant="outline" onClick={(e) => handleDispute(l.id, e)} disabled={accepting === l.id || disputing === l.id}>
-                            <AlertTriangle className="h-3 w-3 mr-1" /> {disputing === l.id ? 'Closing…' : 'Dispute & Close'}
+                            <AlertTriangle className="h-3 w-3 mr-1" /> {disputing === l.id ? 'Closing…' : 'Dispute'}
                           </Button>
                         </div>
                       )}

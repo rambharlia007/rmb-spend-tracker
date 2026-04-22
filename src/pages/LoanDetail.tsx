@@ -174,8 +174,8 @@ export default function LoanDetail() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRepOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddRepayment} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button size="sm" variant="outline" onClick={() => setRepOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleAddRepayment} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

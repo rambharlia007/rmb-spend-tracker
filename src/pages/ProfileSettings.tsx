@@ -57,7 +57,7 @@ export default function ProfileSettings() {
           <Label>Display name</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />
         </div>
-        <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
       </div>
     </div>
   );

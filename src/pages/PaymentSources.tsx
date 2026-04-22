@@ -135,8 +135,8 @@ export default function PaymentSources() {
             <div><Label>Last 4 digits (optional)</Label><Input value={form.last4} onChange={(e) => setForm({ ...form, last4: e.target.value.replace(/\D/g, '').slice(0, 4) })} placeholder="3456" className="mt-1" /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={!form.name.trim()}>Save</Button>
+            <Button size="sm" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={save} disabled={!form.name.trim()}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

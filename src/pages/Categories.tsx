@@ -117,8 +117,8 @@ export default function Categories() {
             <div><Label>Color</Label><div className="mt-1"><ColorPicker value={form.color} onChange={(v) => setForm({ ...form, color: v })} /></div></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={!form.name.trim()}>Save</Button>
+            <Button size="sm" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={save} disabled={!form.name.trim()}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -28,6 +28,12 @@ service cloud.firestore {
       match /contacts/{contactId} {
         allow read, write: if isSignedIn() &&
           get(/databases/$(db)/documents/users/$(internalId)).data.googleUid == request.auth.uid;
+        // Allow the referenced user (the contact subject) to update their own contact entry.
+        // This is needed when accepting a contact invite — the accepter flips the sender's
+        // contact doc status to 'connected'.
+        allow update: if isSignedIn() &&
+          resource.data.refUserId != null &&
+          get(/databases/$(db)/documents/users/$(resource.data.refUserId)).data.googleUid == request.auth.uid;
       }
 
       match /contactInvites/{id} {
