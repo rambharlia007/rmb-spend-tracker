@@ -7,6 +7,7 @@ import {
   orderBy,
   setDoc,
   deleteDoc,
+  updateDoc,
   writeBatch,
   getDoc,
 } from 'firebase/firestore';
@@ -180,6 +181,19 @@ export async function acceptContactInvite(invite: ContactInvite, myInternalId: s
 export async function declineContactInvite(inviteId: string, myInternalId: string) {
   if (!auth.currentUser) throw new Error('Not signed in');
   await deleteDoc(doc(db, 'users', myInternalId, 'contactInvites', inviteId));
+}
+
+// --- Update contact email / display name (only allowed before connected) ---
+export async function updateContact(
+  contactId: string,
+  myInternalId: string,
+  data: { email: string; displayName: string }
+) {
+  if (!auth.currentUser) throw new Error('Not signed in');
+  await updateDoc(doc(db, 'users', myInternalId, 'contacts', contactId), {
+    email: data.email.toLowerCase().trim(),
+    displayName: data.displayName.trim(),
+  });
 }
 
 // --- Remove contact ---

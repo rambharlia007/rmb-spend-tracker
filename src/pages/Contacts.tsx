@@ -8,6 +8,7 @@ import {
   acceptContactInvite,
   declineContactInvite,
   removeContact,
+  updateContact,
   type ContactInvite,
 } from '@/lib/firestore/contacts';
 import {
@@ -25,7 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { Contact, SharedLoan } from '@/types';
-import { Users, UserPlus, Check, X, Trash2, ArrowRightLeft, FileDown } from 'lucide-react';
+import { Users, UserPlus, Check, X, Trash2, ArrowRightLeft, FileDown, Pencil } from 'lucide-react';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
 import { formatINR } from '@/lib/utils';
@@ -65,6 +66,12 @@ export default function Contacts() {
   const [statementTarget, setStatementTarget] = useState<Contact | null>(null);
   const [stmtFrom, setStmtFrom] = useState('');
   const [stmtTo, setStmtTo] = useState(format(new Date(), 'yyyy-MM-dd'));
+
+  // Edit contact state (only for non-connected contacts)
+  const [editTarget, setEditTarget] = useState<Contact | null>(null);
+  const [editEmail, setEditEmail] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     if (!internalId) return;
@@ -213,6 +220,24 @@ export default function Contacts() {
     setStatementTarget(null);
   }
 
+  async function handleEditSave() {
+    if (!editTarget || !internalId) return;
+    const trimmedEmail = editEmail.toLowerCase().trim();
+    if (!trimmedEmail) { toast('Email is required', 'error'); return; }
+    if (trimmedEmail === user?.email?.toLowerCase()) { toast('Cannot set your own email', 'error'); return; }
+    setEditSaving(true);
+    try {
+      await updateContact(editTarget.id, internalId, { email: trimmedEmail, displayName: editName.trim() });
+      toast('Contact updated', 'success');
+      setEditTarget(null);
+    } catch (e: unknown) {
+      logError('Contacts.updateContact', e);
+      toast(friendlyError(e), 'error');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   const loading = contacts === null;
 
   return (
@@ -319,6 +344,16 @@ export default function Contacts() {
                       >
                         <FileDown className="h-3.5 w-3.5" />
                       </Button>
+                      {c.status !== 'connected' && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          title="Edit contact"
+                          onClick={() => { setEditTarget(c); setEditEmail(c.email); setEditName(c.displayName); }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button size="icon" variant="ghost" onClick={() => setDeleteTarget(c)}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
@@ -361,6 +396,40 @@ export default function Contacts() {
         destructive
         onConfirm={handleDelete}
       />
+
+      {/* Edit contact dialog (only for pending_signup / invite_sent) */}
+      {editTarget && (
+        <Dialog open onOpenChange={(o) => { if (!o) setEditTarget(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Edit Contact</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1">
+                <Label>Name</Label>
+                <Input
+                  placeholder="Display name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setEditTarget(null)} disabled={editSaving}>Cancel</Button>
+              <Button size="sm" onClick={handleEditSave} disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Loan statement dialog */}
       {statementTarget && (

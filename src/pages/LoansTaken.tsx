@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
-import { subscribeLoansReceived, acceptLoan, disputeLoan, createLoanTaken } from '@/lib/firestore/loans';
+import { subscribeLoansReceived, acceptLoan, disputeLoan, createLoanTaken, addRepayment } from '@/lib/firestore/loans';
 import { subscribeContacts } from '@/lib/firestore/contacts';
 import { findUserByEmail } from '@/lib/firestore/userLookup';
 import { friendlyError } from '@/lib/errorMessages';
@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowDownToLine, Check, AlertTriangle, Plus } from 'lucide-react';
+import { ArrowDownToLine, Check, AlertTriangle, Plus, CreditCard } from 'lucide-react';
 import type { SharedLoan, Contact } from '@/types';
 import { useNavigate } from 'react-router-dom';
 
@@ -46,6 +46,11 @@ export default function LoansTaken() {
     date: format(new Date(), 'yyyy-MM-dd'),
     notes: '',
   });
+
+  // --- Quick repayment ---
+  const [repTarget, setRepTarget] = useState<SharedLoan | null>(null);
+  const [repSaving, setRepSaving] = useState(false);
+  const [repForm, setRepForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
 
   useEffect(() => {
     if (!internalId) return;
@@ -123,6 +128,32 @@ export default function LoansTaken() {
     }
   }
 
+  async function handlePay() {
+    if (!repTarget || !internalId) return;
+    const amt = Math.round(parseFloat(repForm.amount) * 100) / 100;
+    if (isNaN(amt) || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
+    if (amt > repTarget.outstandingAmount) {
+      toast(`Amount exceeds outstanding balance of ${formatINR(repTarget.outstandingAmount)}`, 'error');
+      return;
+    }
+    setRepSaving(true);
+    try {
+      await addRepayment(repTarget.id, internalId, {
+        amount: amt,
+        date: new Date(repForm.date + 'T00:00:00'),
+        notes: repForm.notes,
+      });
+      toast('Payment recorded', 'success');
+      setRepTarget(null);
+      setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+    } catch (e: unknown) {
+      logError('LoansTaken.addRepayment', e);
+      toast(friendlyError(e), 'error');
+    } finally {
+      setRepSaving(false);
+    }
+  }
+
   const isTerminal = (l: SharedLoan) => l.status === 'settled' || l.status === 'closed' || l.status === 'disputed';
   const activeLoans = loans?.filter((l) => !isTerminal(l)) ?? [];
   const closedLoans = loans?.filter((l) => isTerminal(l)) ?? [];
@@ -181,16 +212,27 @@ export default function LoansTaken() {
                       <Badge variant="secondary" className={STATUS_COLORS[l.status]}>
                         {l.status === 'closed' || l.status === 'disputed' ? 'Disputed' : l.status}
                       </Badge>
-                      {l.status === 'unconfirmed' && (
-                        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" onClick={(e) => handleAccept(l.id, e)} disabled={accepting === l.id || disputing === l.id}>
-                            <Check className="h-3 w-3 mr-1" /> {accepting === l.id ? 'Accepting…' : 'Accept'}
+                      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                        {l.status === 'accepted' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => { e.stopPropagation(); setRepTarget(l); setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' }); }}
+                          >
+                            <CreditCard className="h-3 w-3 mr-1" /> Pay
                           </Button>
-                          <Button size="sm" variant="outline" onClick={(e) => handleDispute(l.id, e)} disabled={accepting === l.id || disputing === l.id}>
-                            <AlertTriangle className="h-3 w-3 mr-1" /> {disputing === l.id ? 'Closing…' : 'Dispute'}
-                          </Button>
-                        </div>
-                      )}
+                        )}
+                        {l.status === 'unconfirmed' && (
+                          <>
+                            <Button size="sm" onClick={(e) => handleAccept(l.id, e)} disabled={accepting === l.id || disputing === l.id}>
+                              <Check className="h-3 w-3 mr-1" /> {accepting === l.id ? 'Accepting…' : 'Accept'}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={(e) => handleDispute(l.id, e)} disabled={accepting === l.id || disputing === l.id}>
+                              <AlertTriangle className="h-3 w-3 mr-1" /> {disputing === l.id ? 'Closing…' : 'Dispute'}
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -282,6 +324,54 @@ export default function LoansTaken() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Quick repayment dialog */}
+      {repTarget && (
+        <Dialog open onOpenChange={(o) => { if (!o) setRepTarget(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Record Payment</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-1 pb-1 text-sm text-muted-foreground">
+              Paying back to <span className="font-medium text-foreground">{repTarget.giverName || repTarget.giverEmail}</span>
+              {' · '}Outstanding: <span className="font-medium text-foreground">{formatINR(repTarget.outstandingAmount)}</span>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Amount (₹)</Label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={1}
+                  placeholder="0.00"
+                  value={repForm.amount}
+                  onChange={(e) => setRepForm((f) => ({ ...f, amount: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={repForm.date}
+                  onChange={(e) => setRepForm((f) => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Notes (optional)</Label>
+                <Input
+                  placeholder="e.g. Paid via UPI"
+                  value={repForm.notes}
+                  onChange={(e) => setRepForm((f) => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setRepTarget(null)} disabled={repSaving}>Cancel</Button>
+              <Button size="sm" onClick={handlePay} disabled={repSaving}>{repSaving ? 'Saving…' : 'Save'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
