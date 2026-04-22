@@ -16,10 +16,12 @@ type WorkspaceContextValue = {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const { user, setInternalId } = useAuth();
+  const { user, internalId: cachedInternalId, setInternalId } = useAuth();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [loading, setLoading] = useState(true);
+  // If we already have a cached internalId from localStorage, skip the loading spinner —
+  // bootstrap will run silently in the background and patch any stale data.
+  const [loading, setLoading] = useState(!cachedInternalId);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
 
@@ -40,7 +42,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    setLoading(true);
+    // Only show loading spinner if we don't have a cached internalId
+    if (!cachedInternalId) setLoading(true);
     setError(null);
 
     bootstrapUser(user)
@@ -48,8 +51,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setInternalId(internalId);
         setWorkspaceId(wsId);
-        // Set loading=false now — onSnapshot will update workspace data when it fires.
-        // This prevents the 8s timeout being the only escape hatch on fast unmounts.
         setLoading(false);
       })
       .catch((e: any) => {
@@ -63,7 +64,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, retryCount, setInternalId]);
 
-  // Safety timeout — if onSnapshot hasn't fired 8s after bootstrap, stop spinning
+  // Safety timeout — only active when loading spinner is shown (20s for slow/cold connections)
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (loading && !error) {
@@ -75,7 +76,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           }
           return prev;
         });
-      }, 8000);
+      }, 20000);
     }
     return () => {
       if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
@@ -91,7 +92,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (snap.exists()) {
           setWorkspace({ id: snap.id, ...(snap.data() as Omit<Workspace, 'id'>) });
         } else {
-          // Workspace doc was deleted — clear stale data and surface an error
           setWorkspace(null);
           setError('Workspace not found. Please contact support.');
         }
@@ -99,7 +99,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setError((prev) => snap.exists() ? null : prev);
       },
       (e) => {
-        // Permission errors on snapshot — likely transient token issue, surface it
         setError(e.message);
         setLoading(false);
       }
