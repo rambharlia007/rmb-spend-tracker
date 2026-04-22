@@ -31,14 +31,14 @@ export default function Contacts() {
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
 
   useEffect(() => {
-    if (!user) return;
-    return subscribeContacts(user.uid, setContacts);
-  }, [user]);
+    if (!internalId) return;
+    return subscribeContacts(internalId, setContacts);
+  }, [internalId]);
 
   useEffect(() => {
-    if (!user) return;
-    return subscribeContactInvites(user.uid, (raw) => setInvites(raw));
-  }, [user]);
+    if (!internalId) return;
+    return subscribeContactInvites(internalId, (raw) => setInvites(raw));
+  }, [internalId]);
 
   async function handleAdd() {
     const trimmedEmail = email.trim().toLowerCase();
@@ -84,8 +84,9 @@ export default function Contacts() {
   }
 
   async function handleDecline(invite: ContactInvite) {
+    if (!internalId) return;
     try {
-      await declineContactInvite(invite.id);
+      await declineContactInvite(invite.id, internalId);
       toast('Invite declined');
     } catch (e: any) {
       toast(e.message, 'error');
@@ -93,9 +94,9 @@ export default function Contacts() {
   }
 
   async function handleDelete() {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !internalId) return;
     try {
-      await removeContact(deleteTarget.id);
+      await removeContact(deleteTarget.id, internalId);
       toast('Contact removed');
     } catch (e: any) {
       toast(e.message, 'error');

@@ -15,9 +15,9 @@ import type { Contact } from '@/types';
 import { findUserByEmail } from '@/lib/firestore/userLookup';
 
 // --- My contacts ---
-// uid: the Google UID of the current user (contacts path uses googleUid)
-export function subscribeContacts(uid: string, cb: (items: Contact[]) => void) {
-  const q = query(collection(db, 'users', uid, 'contacts'), orderBy('createdAt', 'desc'));
+// myInternalId: the stable FK (Firestore doc ID) of the current user
+export function subscribeContacts(myInternalId: string, cb: (items: Contact[]) => void) {
+  const q = query(collection(db, 'users', myInternalId, 'contacts'), orderBy('createdAt', 'desc'));
   return onSnapshot(
     q,
     (snap) => { cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Contact, 'id'>) }))); },
@@ -35,8 +35,8 @@ export type ContactInvite = {
   myContactDocId?: string;
 };
 
-export function subscribeContactInvites(uid: string, cb: (items: ContactInvite[]) => void) {
-  const q = query(collection(db, 'users', uid, 'contactInvites'), orderBy('createdAt', 'desc'));
+export function subscribeContactInvites(myInternalId: string, cb: (items: ContactInvite[]) => void) {
+  const q = query(collection(db, 'users', myInternalId, 'contactInvites'), orderBy('createdAt', 'desc'));
   return onSnapshot(
     q,
     (snap) => {
@@ -72,7 +72,6 @@ export async function addContact(
 
   if (!profile) {
     // Create a stub entry in global /users for this email
-    // Always set googleUid: null explicitly so the update rule works when they sign up
     const stubRef = doc(collection(db, 'users'));
     await setDoc(stubRef, {
       internalId: stubRef.id,
@@ -94,8 +93,8 @@ export async function addContact(
     };
   }
 
-  // Save to my contacts subcollection (using my googleUid as path, internalId as FK)
-  const myContactRef = doc(collection(db, 'users', me.uid, 'contacts'));
+  // Save to my contacts subcollection (using my internalId as path)
+  const myContactRef = doc(collection(db, 'users', myInternalId, 'contacts'));
 
   if (profile.isRegistered && profile.googleUid) {
     // Registered user → send invite
@@ -107,8 +106,8 @@ export async function addContact(
       createdAt: serverTimestamp(),
     });
 
-    // Drop invite into their contactInvites subcollection (using their googleUid as path)
-    const inviteRef = doc(collection(db, 'users', profile.googleUid, 'contactInvites'));
+    // Drop invite into their contactInvites subcollection (using their internalId as path)
+    const inviteRef = doc(collection(db, 'users', profile.internalId, 'contactInvites'));
     await setDoc(inviteRef, {
       senderInternalId: myInternalId,
       senderEmail: me.email ?? '',
@@ -134,12 +133,12 @@ export async function addContact(
 }
 
 // --- Accept invite ---
-export async function acceptContactInvite(invite: ContactInvite, _myInternalId: string) {
+export async function acceptContactInvite(invite: ContactInvite, myInternalId: string) {
   const me = auth.currentUser;
   if (!me) throw new Error('Not signed in');
 
-  // Create contact on my side (already connected)
-  const myContactRef = doc(collection(db, 'users', me.uid, 'contacts'));
+  // Create contact on my side (already connected), using my internalId as path
+  const myContactRef = doc(collection(db, 'users', myInternalId, 'contacts'));
   await setDoc(myContactRef, {
     email: invite.senderEmail,
     displayName: invite.senderName,
@@ -148,35 +147,26 @@ export async function acceptContactInvite(invite: ContactInvite, _myInternalId: 
     createdAt: serverTimestamp(),
   });
 
-  // Flip sender's contact doc to connected
+  // Flip sender's contact doc to connected (their path uses their internalId directly)
   if (invite.myContactDocId && invite.senderInternalId) {
-    const senderSnap = await getDoc(doc(db, 'users', invite.senderInternalId));
-    if (senderSnap.exists()) {
-      const senderGoogleUid = senderSnap.data().googleUid as string | null;
-      if (senderGoogleUid) {
-        await updateDoc(
-          doc(db, 'users', senderGoogleUid, 'contacts', invite.myContactDocId),
-          { status: 'connected' }
-        );
-      }
-    }
-    // No redundant updateDoc on myContactRef — it was just created as 'connected' above
+    await updateDoc(
+      doc(db, 'users', invite.senderInternalId, 'contacts', invite.myContactDocId),
+      { status: 'connected' }
+    );
   }
 
-  // Delete invite
-  await deleteDoc(doc(db, 'users', me.uid, 'contactInvites', invite.id));
+  // Delete invite from my contactInvites (using my internalId as path)
+  await deleteDoc(doc(db, 'users', myInternalId, 'contactInvites', invite.id));
 }
 
 // --- Decline invite ---
-export async function declineContactInvite(inviteId: string) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error('Not signed in');
-  await deleteDoc(doc(db, 'users', uid, 'contactInvites', inviteId));
+export async function declineContactInvite(inviteId: string, myInternalId: string) {
+  if (!auth.currentUser) throw new Error('Not signed in');
+  await deleteDoc(doc(db, 'users', myInternalId, 'contactInvites', inviteId));
 }
 
 // --- Remove contact ---
-export async function removeContact(contactId: string) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error('Not signed in');
-  await deleteDoc(doc(db, 'users', uid, 'contacts', contactId));
+export async function removeContact(contactId: string, myInternalId: string) {
+  if (!auth.currentUser) throw new Error('Not signed in');
+  await deleteDoc(doc(db, 'users', myInternalId, 'contacts', contactId));
 }

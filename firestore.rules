@@ -22,6 +22,9 @@ service cloud.firestore {
         (resource.data.googleUid == request.auth.uid ||
          resource.data.googleUid == null);
 
+      // contacts and contactInvites paths now use internalId (stable FK) as the parent doc ID.
+      // Ownership check: the user doc at this internalId must have googleUid == caller's auth uid.
+      // Anyone signed-in can create contactInvites (needed to send invites to others).
       match /contacts/{contactId} {
         allow read, write: if isSignedIn() &&
           get(/databases/$(db)/documents/users/$(internalId)).data.googleUid == request.auth.uid;
