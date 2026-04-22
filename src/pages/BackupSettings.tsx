@@ -36,8 +36,10 @@ export default function BackupSettings() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `spend-tracker-backup-${format(new Date(), 'yyyyMMdd-HHmm')}.json`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast('Backup downloaded', 'success');
     } catch (e: any) {
       toast(e.message, 'error');

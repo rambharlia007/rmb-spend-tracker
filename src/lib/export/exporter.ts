@@ -12,7 +12,9 @@ function download(filename: string, content: string, mime: string) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   // Delay revoke so browser has time to initiate the download (mobile Safari fix)
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -93,5 +95,15 @@ export function exportSpendsPDF(
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }
   });
 
-  doc.save(`spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
+  // Use blob + anchor instead of doc.save() to avoid jsPDF's internal window.open()
+  // which can trigger router navigation and kill all Firestore subscriptions.
+  const pdfBlob = doc.output('blob');
+  const url = URL.createObjectURL(pdfBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
