@@ -17,6 +17,7 @@ import WorkspaceSettings from '@/pages/WorkspaceSettings';
 import ProfileSettings from '@/pages/ProfileSettings';
 import BackupSettings from '@/pages/BackupSettings';
 import AdminLogs from '@/pages/AdminLogs';
+import Notes from '@/pages/Notes';
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/loans-taken" element={<LoansTaken />} />
             <Route path="/loan/:id" element={<LoanDetail />} />
             <Route path="/contacts" element={<Contacts />} />
+            <Route path="/notes" element={<Notes />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/payment-sources" element={<PaymentSources />} />
             <Route path="/settings/workspace" element={<WorkspaceSettings />} />

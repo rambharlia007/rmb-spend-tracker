@@ -54,6 +54,9 @@ service cloud.firestore {
       match /spends/{id} {
         allow read, write: if isSignedIn();
       }
+      match /notes/{id} {
+        allow read, write: if isSignedIn();
+      }
       match /invites/{id} {
         allow read, write: if isSignedIn();
       }
