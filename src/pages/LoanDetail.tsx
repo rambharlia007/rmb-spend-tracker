@@ -131,8 +131,8 @@ export default function LoanDetail() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold">Repayments</h2>
-          {/* Only the receiver (borrower) can add repayments — not on settled or closed/disputed loans */}
-          {loan.status !== 'settled' && loan.status !== 'closed' && loan.status !== 'disputed' && !isGiver && (
+          {/* Both giver and receiver can record repayments — not on settled or closed/disputed loans */}
+          {loan.status !== 'settled' && loan.status !== 'closed' && loan.status !== 'disputed' && (
             <Button size="sm" onClick={() => setRepOpen(true)}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Add
             </Button>

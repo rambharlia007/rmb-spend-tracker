@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import { subscribeLoansGiven, createLoan, settleLoan } from '@/lib/firestore/loans';
+import { subscribeLoansGiven, createLoan, settleLoan, addRepayment } from '@/lib/firestore/loans';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
 import { subscribeContacts } from '@/lib/firestore/contacts';
@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { HandCoins, Plus } from 'lucide-react';
+import { HandCoins, Plus, CreditCard } from 'lucide-react';
 import type { SharedLoan, Contact, PaymentSource } from '@/types';
 import { useNavigate } from 'react-router-dom';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -44,6 +44,11 @@ export default function LoansGiven() {
   const [saving, setSaving] = useState(false);
   const [settleTarget, setSettleTarget] = useState<SharedLoan | null>(null);
   const [settling, setSettling] = useState(false);
+
+  // Quick repayment received
+  const [repTarget, setRepTarget] = useState<SharedLoan | null>(null);
+  const [repSaving, setRepSaving] = useState(false);
+  const [repForm, setRepForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
 
   const [form, setForm] = useState({
     receiverContactId: '',
@@ -125,6 +130,32 @@ export default function LoansGiven() {
     }
   }
 
+  async function handleReceived() {
+    if (!repTarget || !internalId) return;
+    const amt = Math.round(parseFloat(repForm.amount) * 100) / 100;
+    if (isNaN(amt) || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
+    if (amt > repTarget.outstandingAmount) {
+      toast(`Amount exceeds outstanding balance of ${formatINR(repTarget.outstandingAmount)}`, 'error');
+      return;
+    }
+    setRepSaving(true);
+    try {
+      await addRepayment(repTarget.id, internalId, {
+        amount: amt,
+        date: new Date(repForm.date + 'T00:00:00'),
+        notes: repForm.notes,
+      });
+      toast('Payment recorded', 'success');
+      setRepTarget(null);
+      setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+    } catch (e: unknown) {
+      logError('LoansGiven.addRepayment', e);
+      toast(friendlyError(e), 'error');
+    } finally {
+      setRepSaving(false);
+    }
+  }
+
   const isTerminal = (l: SharedLoan) => l.status === 'settled' || l.status === 'closed' || l.status === 'disputed';
   const activeLoans = loans?.filter((l) => !isTerminal(l)) ?? [];
   const closedLoans = loans?.filter((l) => isTerminal(l)) ?? [];
@@ -154,7 +185,7 @@ export default function LoansGiven() {
                 <h2 className="text-sm font-semibold">Outstanding</h2>
                 <span className="text-sm font-semibold tabular-nums">{formatINR(totalOutstanding)}</span>
               </div>
-              <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} onSettle={(l) => setSettleTarget(l)} />
+              <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} onSettle={(l) => setSettleTarget(l)} onReceived={(l) => { setRepTarget(l); setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' }); }} />
             </section>
           )}
           {closedLoans.length > 0 && (
@@ -225,11 +256,47 @@ export default function LoansGiven() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Repayment received dialog */}
+      {repTarget && (
+        <Dialog open onOpenChange={(o) => { if (!o) setRepTarget(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader><DialogTitle>Record Payment Received</DialogTitle></DialogHeader>
+            <div className="space-y-1 pb-1 text-sm text-muted-foreground">
+              From <span className="font-medium text-foreground">{repTarget.receiverName || repTarget.receiverEmail}</span>
+              {' · '}Outstanding: <span className="font-medium text-foreground">{formatINR(repTarget.outstandingAmount)}</span>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Amount (₹)</Label>
+                <Input type="number" inputMode="decimal" min={1} placeholder="0.00" value={repForm.amount} onChange={(e) => setRepForm((f) => ({ ...f, amount: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Date</Label>
+                <Input type="date" value={repForm.date} onChange={(e) => setRepForm((f) => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Notes (optional)</Label>
+                <Input placeholder="e.g. Received via UPI" value={repForm.notes} onChange={(e) => setRepForm((f) => ({ ...f, notes: e.target.value }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setRepTarget(null)} disabled={repSaving}>Cancel</Button>
+              <Button size="sm" onClick={handleReceived} disabled={repSaving}>{repSaving ? 'Saving…' : 'Save'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
-function LoanList({ loans, onSelect, onSettle, dim }: { loans: SharedLoan[]; onSelect: (id: string) => void; onSettle?: (l: SharedLoan) => void; dim?: boolean }) {
+function LoanList({ loans, onSelect, onSettle, onReceived, dim }: {
+  loans: SharedLoan[];
+  onSelect: (id: string) => void;
+  onSettle?: (l: SharedLoan) => void;
+  onReceived?: (l: SharedLoan) => void;
+  dim?: boolean;
+}) {
   return (
     <div className="space-y-2">
       {loans.map((l) => (
@@ -238,10 +305,7 @@ function LoanList({ loans, onSelect, onSettle, dim }: { loans: SharedLoan[]; onS
           className={`rounded-lg border bg-card px-4 py-3 ${dim ? 'opacity-60' : ''}`}
         >
           {/* Top row: name + amount */}
-          <button
-            onClick={() => onSelect(l.id)}
-            className="w-full text-left"
-          >
+          <button onClick={() => onSelect(l.id)} className="w-full text-left">
             <div className="flex items-center justify-between gap-2">
               <div className="font-medium text-sm truncate">{l.receiverName || l.receiverEmail}</div>
               <div className="text-sm font-semibold tabular-nums shrink-0">{formatINR(l.outstandingAmount)}</div>
@@ -253,19 +317,23 @@ function LoanList({ loans, onSelect, onSettle, dim }: { loans: SharedLoan[]; onS
               <div className="text-xs text-muted-foreground">of {formatINR(l.amount)}</div>
             )}
           </button>
-          {/* Bottom row: badge + settle */}
+          {/* Bottom row: badge + actions */}
           <div className="flex items-center justify-between mt-2">
             <Badge variant="secondary" className={STATUS_COLORS[l.status]}>
               {l.status === 'closed' || l.status === 'disputed' ? 'Disputed' : l.status}
             </Badge>
-            {onSettle && l.status === 'accepted' && (
-              <button
-                onClick={() => onSettle(l)}
-                className="text-xs font-medium text-primary underline underline-offset-2"
-              >
-                Mark settled
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {onReceived && l.status === 'accepted' && (
+                <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => onReceived(l)}>
+                  <CreditCard className="h-3 w-3" /> Received
+                </Button>
+              )}
+              {onSettle && l.status === 'accepted' && (
+                <button onClick={() => onSettle(l)} className="text-xs font-medium text-primary underline underline-offset-2">
+                  Mark settled
+                </button>
+              )}
+            </div>
           </div>
         </div>
       ))}
