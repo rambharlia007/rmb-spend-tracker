@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { Category, PaymentSource, Spend } from '@/types';
+import type { Category, PaymentSource, Spend, SharedLoan } from '@/types';
 import { formatINR } from '@/lib/utils';
 import type { FilterState } from '@/components/FilterBar';
 import { PRESET_LABELS } from '@/lib/dateRanges';
@@ -12,6 +12,8 @@ function download(filename: string, content: string, mime: string) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  a.target = '_blank';   // prevent HashRouter intercepting the click as navigation
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -102,6 +104,145 @@ export function exportSpendsPDF(
   const a = document.createElement('a');
   a.href = url;
   a.download = `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`;
+  a.target = '_blank';   // prevent HashRouter intercepting the click as navigation
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// --- Per-contact loan statement (bank-statement style) ---
+// Shows all loans given + taken with a running balance, sorted by date.
+// Credit = they owe me (I lent them), Debit = I owe them (they lent me).
+export function generateLoanStatementPDF(opts: {
+  myName: string;
+  contactName: string;
+  contactEmail: string;
+  givenLoans: SharedLoan[];   // all loans I gave to this contact (any status)
+  takenLoans: SharedLoan[];   // all loans they gave me (any status)
+  fromDate: Date | null;
+  toDate: Date | null;
+}) {
+  const { myName, contactName, contactEmail, fromDate, toDate } = opts;
+  const now = new Date();
+
+  // Filter by date range if provided
+  const inRange = (l: SharedLoan) => {
+    const d = l.date.toDate();
+    if (fromDate && d < fromDate) return false;
+    if (toDate && d > toDate) return false;
+    return true;
+  };
+  const given = opts.givenLoans.filter(inRange);
+  const taken = opts.takenLoans.filter(inRange);
+
+  // Merge into a single timeline sorted by date ascending
+  type Row = {
+    date: Date;
+    description: string;
+    credit: number;   // I lent them (they owe me)
+    debit: number;    // They lent me (I owe them)
+    status: string;
+  };
+
+  const rows: Row[] = [
+    ...given.map((l) => ({
+      date: l.date.toDate(),
+      description: l.notes ? `Lent · ${l.notes}` : 'Lent',
+      credit: l.amount,
+      debit: 0,
+      status: l.status,
+    })),
+    ...taken.map((l) => ({
+      date: l.date.toDate(),
+      description: l.notes ? `Borrowed · ${l.notes}` : 'Borrowed',
+      credit: 0,
+      debit: l.amount,
+      status: l.status,
+    })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Running balance: positive = they owe me net, negative = I owe them net
+  let runningBalance = 0;
+  const tableBody = rows.map((r) => {
+    runningBalance += r.credit - r.debit;
+    const balStr = runningBalance >= 0
+      ? `${formatINR(runningBalance)} DR`   // DR = they owe me (I'm a debtor's creditor)
+      : `${formatINR(Math.abs(runningBalance))} CR`; // CR = I owe them
+    return [
+      format(r.date, 'dd MMM yyyy'),
+      r.description,
+      r.credit > 0 ? formatINR(r.credit) : '—',
+      r.debit > 0 ? formatINR(r.debit) : '—',
+      balStr,
+      r.status,
+    ];
+  });
+
+  const totalLent = given.reduce((s, l) => s + l.amount, 0);
+  const totalBorrowed = taken.reduce((s, l) => s + l.amount, 0);
+  const closingBalance = totalLent - totalBorrowed;
+
+  const doc = new jsPDF();
+
+  // Header
+  doc.setFontSize(18);
+  doc.text('Loan Statement', 14, 20);
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`My account: ${myName}`, 14, 28);
+  doc.text(`With: ${contactName} (${contactEmail})`, 14, 34);
+  doc.text(`Generated: ${format(now, 'dd MMM yyyy HH:mm')}`, 14, 40);
+  if (fromDate || toDate) {
+    const range = `${fromDate ? format(fromDate, 'dd MMM yyyy') : 'beginning'} → ${toDate ? format(toDate, 'dd MMM yyyy') : 'today'}`;
+    doc.text(`Period: ${range}`, 14, 46);
+  }
+  doc.setTextColor(0);
+
+  if (rows.length === 0) {
+    doc.setFontSize(11);
+    doc.text('No transactions found for the selected period.', 14, 58);
+  } else {
+    // Summary box
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Total lent: ${formatINR(totalLent)}   Total borrowed: ${formatINR(totalBorrowed)}`, 14, 54);
+    doc.setTextColor(0);
+
+    autoTable(doc, {
+      startY: 60,
+      head: [['Date', 'Description', 'Lent (CR)', 'Borrowed (DR)', 'Balance', 'Status']],
+      body: tableBody,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [15, 23, 42] },
+      columnStyles: {
+        2: { halign: 'right' },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+      },
+    });
+
+    // Closing balance row
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const finalY = (doc as any).lastAutoTable?.finalY ?? 60;
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    const closingLabel = closingBalance >= 0
+      ? `Closing balance: ${formatINR(closingBalance)} — they owe you`
+      : `Closing balance: ${formatINR(Math.abs(closingBalance))} — you owe them`;
+    doc.text(closingLabel, 14, finalY + 10);
+    doc.setFont('helvetica', 'normal');
+  }
+
+  const pdfBlob = doc.output('blob');
+  const url = URL.createObjectURL(pdfBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safeName = (contactName || contactEmail).replace(/[^a-z0-9]/gi, '_');
+  a.download = `loan-statement-${safeName}-${format(now, 'yyyyMMdd')}.pdf`;
+  a.target = '_blank';
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

@@ -15,18 +15,21 @@ import {
   subscribeLoansReceived,
   netSettleLoans,
 } from '@/lib/firestore/loans';
+import { generateLoanStatementPDF } from '@/lib/export/exporter';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { Contact, SharedLoan } from '@/types';
-import { Users, UserPlus, Check, X, Trash2, ArrowRightLeft } from 'lucide-react';
+import { Users, UserPlus, Check, X, Trash2, ArrowRightLeft, FileDown } from 'lucide-react';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
 import { formatINR } from '@/lib/utils';
+import { format } from 'date-fns';
 
 // Active loan statuses (not terminal)
 const ACTIVE = new Set(['unconfirmed', 'accepted']);
@@ -57,6 +60,11 @@ export default function Contacts() {
   // Settlement dialog state
   const [settleTarget, setSettleTarget] = useState<{ contact: Contact; balance: NetBalance } | null>(null);
   const [settling, setSettling] = useState(false);
+
+  // Statement dialog state
+  const [statementTarget, setStatementTarget] = useState<Contact | null>(null);
+  const [stmtFrom, setStmtFrom] = useState('');
+  const [stmtTo, setStmtTo] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   useEffect(() => {
     if (!internalId) return;
@@ -188,6 +196,23 @@ export default function Contacts() {
     }
   }
 
+  function handleDownloadStatement() {
+    if (!statementTarget || !user) return;
+    const refId = statementTarget.refUserId;
+    const given = refId ? loansGiven.filter((l) => l.receiverInternalId === refId) : [];
+    const taken = refId ? loansReceived.filter((l) => l.giverInternalId === refId) : [];
+    generateLoanStatementPDF({
+      myName: user.displayName || user.email || 'Me',
+      contactName: statementTarget.displayName || statementTarget.email,
+      contactEmail: statementTarget.email,
+      givenLoans: given,
+      takenLoans: taken,
+      fromDate: stmtFrom ? new Date(stmtFrom + 'T00:00:00') : null,
+      toDate: stmtTo ? new Date(stmtTo + 'T23:59:59') : null,
+    });
+    setStatementTarget(null);
+  }
+
   const loading = contacts === null;
 
   return (
@@ -286,6 +311,14 @@ export default function Contacts() {
                           <ArrowRightLeft className="h-3 w-3" /> Settle
                         </Button>
                       )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="Download statement"
+                        onClick={() => setStatementTarget(c)}
+                      >
+                        <FileDown className="h-3.5 w-3.5" />
+                      </Button>
                       <Button size="icon" variant="ghost" onClick={() => setDeleteTarget(c)}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
@@ -328,6 +361,34 @@ export default function Contacts() {
         destructive
         onConfirm={handleDelete}
       />
+
+      {/* Loan statement dialog */}
+      {statementTarget && (
+        <Dialog open onOpenChange={(o) => { if (!o) setStatementTarget(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Statement — {statementTarget.displayName || statementTarget.email}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-sm">
+              <p className="text-muted-foreground">Download a bank-statement style PDF of all loans with this contact. Leave dates blank to include all history.</p>
+              <div className="space-y-1">
+                <Label>From date (optional)</Label>
+                <Input type="date" value={stmtFrom} onChange={(e) => setStmtFrom(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>To date (optional)</Label>
+                <Input type="date" value={stmtTo} onChange={(e) => setStmtTo(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setStatementTarget(null)}>Cancel</Button>
+              <Button size="sm" onClick={handleDownloadStatement}>
+                <FileDown className="h-3.5 w-3.5 mr-1" /> Download PDF
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Net settlement dialog */}
       {settleTarget && (

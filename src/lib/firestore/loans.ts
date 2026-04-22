@@ -163,6 +163,44 @@ export async function addRepayment(
   });
 }
 
+// --- Self-record a loan taken (I borrowed from someone, auto-accepted) ---
+// Used when the lender is not on the app or hasn't recorded it themselves.
+// Status is immediately 'accepted' since the borrower is self-reporting.
+export async function createLoanTaken(data: {
+  myInternalId: string;
+  myEmail: string;
+  myName: string;
+  giverInternalId: string | null;
+  giverEmail: string;
+  giverName: string;
+  amount: number;
+  date: Date;
+  notes: string;
+}) {
+  const me = auth.currentUser;
+  if (!me) throw new Error('Not signed in');
+  const ref = doc(collection(db, 'sharedLoans'));
+  await setDoc(ref, {
+    giverInternalId: data.giverInternalId ?? null,
+    giverEmail: data.giverEmail,
+    giverName: data.giverName,
+    receiverInternalId: data.myInternalId,
+    receiverEmail: data.myEmail,
+    receiverName: data.myName,
+    sourceWorkspaceId: null,
+    sourcePaymentSourceId: null,
+    amount: data.amount,
+    date: Timestamp.fromDate(data.date),
+    notes: data.notes,
+    status: 'accepted' as LoanStatus,   // self-reported — no confirmation needed
+    outstandingAmount: data.amount,
+    createdBy: data.myInternalId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
 // --- Net settlement between two parties ---
 // Given loans I gave to person X, and loans X gave me:
 // - Marks all loans on the smaller side as settled
