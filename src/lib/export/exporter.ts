@@ -2,7 +2,7 @@ import { format } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Category, PaymentSource, Spend, SharedLoan } from '@/types';
-import { formatINR } from '@/lib/utils';
+import { formatINRForPDF } from '@/lib/utils';
 import type { FilterState } from '@/components/FilterBar';
 import { PRESET_LABELS } from '@/lib/dateRanges';
 
@@ -54,56 +54,186 @@ export function exportSpendsPDF(
 ) {
   const doc = new jsPDF();
   const now = new Date();
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 14;
   const total = spends.reduce((a, b) => a + b.amount, 0);
 
-  doc.setFontSize(18);
-  doc.text('Spend Report', 14, 20);
-  doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text(workspaceName, 14, 27);
-  doc.text(`Generated: ${format(now, 'dd MMM yyyy HH:mm')}`, 14, 33);
-  doc.text(`Period: ${PRESET_LABELS[filters.preset]}`, 14, 39);
-  doc.setFontSize(12);
-  doc.setTextColor(0);
-  doc.text(`Total: ${formatINR(total)}  (${spends.length} entries)`, 14, 48);
+  // Sort spends oldest → newest so the report reads like a timeline.
+  const sorted = [...spends].sort((a, b) => a.date.toDate().getTime() - b.date.toDate().getTime());
+  const avg = spends.length > 0 ? total / spends.length : 0;
 
-  // Table
+  // --- Header ---
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Spend Report', margin, 22);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(110);
+  doc.text(`Generated ${format(now, 'dd MMM yyyy, HH:mm')}`, pageW - margin, 22, { align: 'right' });
+
+  doc.setDrawColor(225);
+  doc.setLineWidth(0.3);
+  doc.line(margin, 26, pageW - margin, 26);
+
+  // Identity block
+  doc.setFontSize(9);
+  doc.setTextColor(110);
+  doc.text('Workspace', margin, 34);
+  doc.text('Period', margin, 41);
+
+  doc.setTextColor(30);
+  doc.setFont('helvetica', 'bold');
+  doc.text(workspaceName || '—', margin + 32, 34);
+  doc.setFont('helvetica', 'normal');
+  doc.text(PRESET_LABELS[filters.preset], margin + 32, 41);
+
+  if (spends.length === 0) {
+    doc.setFontSize(11);
+    doc.setTextColor(80);
+    doc.text('No spends found for the selected period.', margin, 56);
+    triggerDownload(doc.output('blob'), `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
+    return;
+  }
+
+  // --- KPI summary cards ---
+  const cardW = (pageW - 2 * margin - 8) / 3;
+  const cardH = 18;
+  const cardY = 50;
+  const drawCard = (x: number, label: string, value: string, isPrimary = false) => {
+    doc.setFillColor(isPrimary ? 15 : 248, isPrimary ? 23 : 250, isPrimary ? 42 : 252);
+    doc.setDrawColor(isPrimary ? 15 : 226, isPrimary ? 23 : 232, isPrimary ? 42 : 240);
+    doc.roundedRect(x, cardY, cardW, cardH, 1.5, 1.5, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(isPrimary ? 200 : 120);
+    doc.text(label.toUpperCase(), x + 4, cardY + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(isPrimary ? 255 : 15);
+    doc.text(value, x + 4, cardY + 14);
+  };
+
+  drawCard(margin, 'Entries', String(spends.length));
+  drawCard(margin + cardW + 4, 'Average', formatINRForPDF(avg));
+  drawCard(margin + 2 * (cardW + 4), 'Total spent', formatINRForPDF(total), true);
+
+  // --- Transactions table ---
+  const txStartY = cardY + cardH + 8;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(30);
+  doc.text('Transactions', margin, txStartY - 3);
+
+  // A4 portrait usable width = 182mm. Sum below = 182.
   autoTable(doc, {
-    startY: 54,
+    startY: txStartY,
+    margin: { left: margin, right: margin },
     head: [['Date', 'Category', 'Source', 'Notes', 'Amount']],
-    body: spends.map((s) => [
-      format(s.date.toDate(), 'dd MMM'),
-      catMap.get(s.categoryId)?.name ?? '',
-      srcMap.get(s.paymentSourceId)?.name ?? '',
+    body: sorted.map((s) => [
+      format(s.date.toDate(), 'dd MMM yy'),
+      catMap.get(s.categoryId)?.name ?? '—',
+      srcMap.get(s.paymentSourceId)?.name ?? '—',
       s.notes ?? '',
-      formatINR(s.amount)
+      formatINRForPDF(s.amount),
     ]),
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [15, 23, 42] },
-    columnStyles: { 4: { halign: 'right' } }
+    styles: {
+      fontSize: 9,
+      cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
+      overflow: 'linebreak',
+      valign: 'middle',
+      lineColor: [232, 234, 240],
+      lineWidth: 0.15,
+      textColor: [30, 30, 30],
+    },
+    headStyles: {
+      fillColor: [248, 250, 252],
+      textColor: [80, 90, 110],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      halign: 'left',
+      lineColor: [220, 224, 232],
+      lineWidth: 0.2,
+    },
+    alternateRowStyles: { fillColor: [252, 253, 254] },
+    columnStyles: {
+      0: { cellWidth: 22 },                                       // Date
+      1: { cellWidth: 38 },                                       // Category
+      2: { cellWidth: 32 },                                       // Source
+      3: { cellWidth: 60, overflow: 'linebreak' },                // Notes
+      4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },   // Amount
+    },
   });
 
-  // Category summary
+  // --- Category breakdown ---
   const byCat = new Map<string, number>();
   for (const s of spends) {
     const name = catMap.get(s.categoryId)?.name ?? 'Unknown';
     byCat.set(name, (byCat.get(name) ?? 0) + s.amount);
   }
   const summary = Array.from(byCat.entries()).sort((a, b) => b[1] - a[1]);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const finalY = (doc as any).lastAutoTable?.finalY ?? 54;
+  const txFinalY = (doc as any).lastAutoTable?.finalY ?? txStartY;
+  const breakdownY = txFinalY + 12;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(30);
+  doc.text('By category', margin, breakdownY - 3);
 
   autoTable(doc, {
-    startY: finalY + 10,
-    head: [['Category', 'Total', '%']],
-    body: summary.map(([name, amt]) => [name, formatINR(amt), total > 0 ? ((amt / total) * 100).toFixed(1) + '%' : '—']),
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [15, 23, 42] },
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }
+    startY: breakdownY,
+    margin: { left: margin, right: margin },
+    head: [['Category', 'Total', 'Share']],
+    body: summary.map(([name, amt]) => [
+      name,
+      formatINRForPDF(amt),
+      total > 0 ? `${((amt / total) * 100).toFixed(1)}%` : '—',
+    ]),
+    styles: {
+      fontSize: 9,
+      cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
+      lineColor: [232, 234, 240],
+      lineWidth: 0.15,
+      textColor: [30, 30, 30],
+    },
+    headStyles: {
+      fillColor: [248, 250, 252],
+      textColor: [80, 90, 110],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      lineColor: [220, 224, 232],
+      lineWidth: 0.2,
+    },
+    alternateRowStyles: { fillColor: [252, 253, 254] },
+    columnStyles: {
+      0: { cellWidth: 100 },
+      1: { cellWidth: 42, halign: 'right', fontStyle: 'bold' },
+      2: { cellWidth: 40, halign: 'right' },
+    },
   });
 
-  // Use blob + anchor instead of doc.save() to avoid jsPDF's internal window.open()
-  // which can trigger router navigation and kill all Firestore subscriptions.
+  // --- Total footer ---
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const finalY = (doc as any).lastAutoTable?.finalY ?? breakdownY;
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.5);
+  doc.line(margin, finalY + 6, pageW - margin, finalY + 6);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Total spent', margin, finalY + 13);
+  doc.setFontSize(13);
+  doc.text(formatINRForPDF(total), pageW - margin, finalY + 13, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+
+  doc.setFontSize(7.5);
+  doc.setTextColor(140);
+  doc.text('All amounts in INR.', margin, finalY + 21);
+
   triggerDownload(doc.output('blob'), `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
 }
 
@@ -138,7 +268,6 @@ export function generateLoanStatementPDF(opts: {
     description: string;
     credit: number;   // I lent them (they owe me)
     debit: number;    // They lent me (I owe them)
-    status: string;
   };
 
   const rows: Row[] = [
@@ -147,14 +276,12 @@ export function generateLoanStatementPDF(opts: {
       description: l.notes ? `Lent · ${l.notes}` : 'Lent',
       credit: l.amount,
       debit: 0,
-      status: l.status,
     })),
     ...taken.map((l) => ({
       date: l.date.toDate(),
       description: l.notes ? `Borrowed · ${l.notes}` : 'Borrowed',
       credit: 0,
       debit: l.amount,
-      status: l.status,
     })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -162,16 +289,17 @@ export function generateLoanStatementPDF(opts: {
   let runningBalance = 0;
   const tableBody = rows.map((r) => {
     runningBalance += r.credit - r.debit;
-    const balStr = runningBalance >= 0
-      ? `${formatINR(runningBalance)} DR`   // DR = they owe me (I'm a debtor's creditor)
-      : `${formatINR(Math.abs(runningBalance))} CR`; // CR = I owe them
+    const balStr = runningBalance === 0
+      ? formatINRForPDF(0)
+      : runningBalance > 0
+        ? `${formatINRForPDF(runningBalance)} DR`
+        : `${formatINRForPDF(Math.abs(runningBalance))} CR`;
     return [
       format(r.date, 'dd MMM yyyy'),
       r.description,
-      r.credit > 0 ? formatINR(r.credit) : '—',
-      r.debit > 0 ? formatINR(r.debit) : '—',
+      r.credit > 0 ? formatINRForPDF(r.credit) : '',
+      r.debit > 0 ? formatINRForPDF(r.debit) : '',
       balStr,
-      r.status,
     ];
   });
 
@@ -180,60 +308,148 @@ export function generateLoanStatementPDF(opts: {
   const closingBalance = totalLent - totalBorrowed;
 
   const doc = new jsPDF();
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 14;
 
-  // Header
-  doc.setFontSize(18);
-  doc.text('Loan Statement', 14, 20);
-  doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text(`My account: ${myName}`, 14, 28);
-  doc.text(`With: ${contactName} (${contactEmail})`, 14, 34);
-  doc.text(`Generated: ${format(now, 'dd MMM yyyy HH:mm')}`, 14, 40);
+  // --- Header ---
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Loan Statement', margin, 22);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(110);
+  doc.text(`Generated ${format(now, 'dd MMM yyyy, HH:mm')}`, pageW - margin, 22, { align: 'right' });
+
+  // Divider
+  doc.setDrawColor(225);
+  doc.setLineWidth(0.3);
+  doc.line(margin, 26, pageW - margin, 26);
+
+  // Identity block
+  doc.setFontSize(9);
+  doc.setTextColor(110);
+  doc.text('Account holder', margin, 34);
+  doc.text('Counterparty', margin, 41);
+  if (fromDate || toDate) doc.text('Period', margin, 48);
+
+  doc.setTextColor(30);
+  doc.setFont('helvetica', 'bold');
+  doc.text(myName, margin + 32, 34);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${contactName}   ${contactEmail}`, margin + 32, 41);
   if (fromDate || toDate) {
-    const range = `${fromDate ? format(fromDate, 'dd MMM yyyy') : 'beginning'} → ${toDate ? format(toDate, 'dd MMM yyyy') : 'today'}`;
-    doc.text(`Period: ${range}`, 14, 46);
+    const range = `${fromDate ? format(fromDate, 'dd MMM yyyy') : 'Beginning'}  to  ${toDate ? format(toDate, 'dd MMM yyyy') : 'Today'}`;
+    doc.text(range, margin + 32, 48);
   }
-  doc.setTextColor(0);
+
+  const summaryY = (fromDate || toDate) ? 56 : 50;
 
   if (rows.length === 0) {
     doc.setFontSize(11);
-    doc.text('No transactions found for the selected period.', 14, 58);
+    doc.setTextColor(80);
+    doc.text('No transactions found for the selected period.', margin, summaryY + 6);
   } else {
-    // Summary box
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Total lent: ${formatINR(totalLent)}   Total borrowed: ${formatINR(totalBorrowed)}`, 14, 54);
-    doc.setTextColor(0);
+    // --- KPI summary cards ---
+    const cardW = (pageW - 2 * margin - 8) / 3;  // 3 cards, 4mm gap between
+    const cardH = 18;
+    const cardY = summaryY;
+    const drawCard = (x: number, label: string, value: string, isPrimary = false) => {
+      doc.setFillColor(isPrimary ? 15 : 248, isPrimary ? 23 : 250, isPrimary ? 42 : 252);
+      doc.setDrawColor(isPrimary ? 15 : 226, isPrimary ? 23 : 232, isPrimary ? 42 : 240);
+      doc.roundedRect(x, cardY, cardW, cardH, 1.5, 1.5, 'FD');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(isPrimary ? 200 : 120);
+      doc.text(label.toUpperCase(), x + 4, cardY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(isPrimary ? 255 : 15);
+      doc.text(value, x + 4, cardY + 14);
+    };
 
-    // Explicit widths so amount/balance columns never get squeezed by long descriptions.
-    // A4 portrait usable width ≈ 182mm with 14mm margins. Sum below = 182.
+    const closingValue = closingBalance === 0
+      ? '0  Settled'
+      : closingBalance > 0
+        ? `${formatINRForPDF(closingBalance)}  DR`
+        : `${formatINRForPDF(Math.abs(closingBalance))}  CR`;
+
+    drawCard(margin, 'Total lent', formatINRForPDF(totalLent));
+    drawCard(margin + cardW + 4, 'Total borrowed', formatINRForPDF(totalBorrowed));
+    drawCard(margin + 2 * (cardW + 4), 'Net balance', closingValue, true);
+
+    // --- Transaction table ---
+    const tableStartY = cardY + cardH + 8;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(30);
+    doc.text('Transactions', margin, tableStartY - 3);
+
+    // A4 portrait usable width = 182mm. Sum below = 182.
     autoTable(doc, {
-      startY: 60,
-      margin: { left: 14, right: 14 },
-      head: [['Date', 'Description', 'Lent', 'Borrowed', 'Balance', 'Status']],
+      startY: tableStartY,
+      margin: { left: margin, right: margin },
+      head: [['Date', 'Description', 'Lent', 'Borrowed', 'Balance']],
       body: tableBody,
-      styles: { fontSize: 8, cellPadding: 1.8, overflow: 'linebreak', valign: 'top' },
-      headStyles: { fillColor: [15, 23, 42], halign: 'left', fontStyle: 'bold' },
+      styles: {
+        fontSize: 9,
+        cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
+        overflow: 'linebreak',
+        valign: 'middle',
+        lineColor: [232, 234, 240],
+        lineWidth: 0.15,
+        textColor: [30, 30, 30],
+      },
+      headStyles: {
+        fillColor: [248, 250, 252],
+        textColor: [80, 90, 110],
+        fontStyle: 'bold',
+        fontSize: 8.5,
+        halign: 'left',
+        lineColor: [220, 224, 232],
+        lineWidth: 0.2,
+      },
+      alternateRowStyles: { fillColor: [252, 253, 254] },
       columnStyles: {
-        0: { cellWidth: 22 },                                  // Date
-        1: { cellWidth: 64, overflow: 'linebreak' },           // Description wraps
-        2: { cellWidth: 24, halign: 'right' },                 // Lent
-        3: { cellWidth: 24, halign: 'right' },                 // Borrowed
-        4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }, // Balance
-        5: { cellWidth: 18, halign: 'center', fontSize: 7 },   // Status
+        0: { cellWidth: 24 },                                       // Date
+        1: { cellWidth: 70, overflow: 'linebreak' },                // Description
+        2: { cellWidth: 28, halign: 'right' },                      // Lent
+        3: { cellWidth: 28, halign: 'right' },                      // Borrowed
+        4: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },   // Balance + DR/CR
       },
     });
 
-    // Closing balance row
+    // --- Closing balance footer ---
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const finalY = (doc as any).lastAutoTable?.finalY ?? 60;
-    doc.setFontSize(11);
+    const finalY = (doc as any).lastAutoTable?.finalY ?? tableStartY;
+
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.5);
+    doc.line(margin, finalY + 6, pageW - margin, finalY + 6);
+
     doc.setFont('helvetica', 'bold');
-    const closingLabel = closingBalance >= 0
-      ? `Closing balance: ${formatINR(closingBalance)} — they owe you`
-      : `Closing balance: ${formatINR(Math.abs(closingBalance))} — you owe them`;
-    doc.text(closingLabel, 14, finalY + 10);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    const closingLabel = closingBalance === 0
+      ? 'Closing balance — Settled'
+      : closingBalance > 0
+        ? 'Closing balance — they owe you'
+        : 'Closing balance — you owe them';
+    doc.text(closingLabel, margin, finalY + 13);
+
+    doc.setFontSize(13);
+    doc.text(closingValue, pageW - margin, finalY + 13, { align: 'right' });
     doc.setFont('helvetica', 'normal');
+
+    // Legend
+    doc.setFontSize(7.5);
+    doc.setTextColor(140);
+    doc.text(
+      'All amounts in INR.  DR = receivable from counterparty (they owe you).  CR = payable to counterparty (you owe them).',
+      margin,
+      finalY + 21
+    );
   }
 
   const safeName = (contactName || contactEmail).replace(/[^a-z0-9]/gi, '_');
