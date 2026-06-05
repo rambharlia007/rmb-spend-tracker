@@ -11,11 +11,15 @@ function download(filename: string, content: string, mime: string) {
   triggerDownload(blob, filename);
 }
 
-// Centralised download trigger. NO target="_blank" — in standalone PWA mode the SW's
-// navigateFallback intercepts the new-tab navigation for a blob URL and hangs the app.
-// The download attribute alone is enough; blob: URLs are not intercepted by any router.
+// Centralised download trigger.
+// - NO target="_blank": in standalone PWA mode it triggers a navigate the SW
+//   intercepts via navigateFallback, hanging the app.
+// - We re-wrap the blob with application/octet-stream so the browser must
+//   download (never render inline). Inline PDF/HTML rendering inside the PWA
+//   window is what was making the app feel "frozen" after a download.
 function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
+  const dl = new Blob([blob], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(dl);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
@@ -23,7 +27,7 @@ function triggerDownload(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 export function exportSpendsCSV(
