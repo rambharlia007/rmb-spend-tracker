@@ -11,16 +11,42 @@ function download(filename: string, content: string, mime: string) {
   triggerDownload(blob, filename);
 }
 
-// Centralised download trigger.
-// Two paths:
-// 1) File System Access API (Chrome/Edge on desktop) — native save dialog,
-//    no blob URL, no anchor click, no SW interception. This is the only
-//    reliable path inside an installed PWA on Windows; the anchor-click
-//    method makes the app appear "frozen" after the download.
-// 2) Fallback anchor click for browsers without the API (Firefox/Safari).
-//    Re-wrap the blob as application/octet-stream so the browser cannot
-//    try to render it inline.
+// Centralised download trigger. Tries three paths in order; each one bypasses
+// the anchor-click + blob-URL combo that hangs the app on PWA standalone mode
+// (service worker intercepts the navigate event, or the browser tries to
+// render the blob inline).
+//
+// 1) Web Share API with a File — best for MOBILE (iOS Safari, Android Chrome,
+//    and their PWA shells). Opens the OS share sheet; user picks "Save to
+//    Files" / Drive / Mail / WhatsApp / whatever. No blob URL navigation.
+// 2) File System Access API — best for DESKTOP Chrome/Edge (incl. installed
+//    PWA on Windows/macOS). Opens the native save dialog; writes to disk.
+// 3) Anchor click with octet-stream MIME — fallback for Firefox/Safari
+//    desktop, plus anything else that lacks the first two.
+//
+// Both 1 and 2 must be invoked under user activation (a click handler) — the
+// preceding sync PDF generation must finish well under 5s for that to hold.
 async function triggerDownload(blob: Blob, filename: string) {
+  const mime = filename.toLowerCase().endsWith('.pdf')
+    ? 'application/pdf'
+    : filename.toLowerCase().endsWith('.csv')
+      ? 'text/csv'
+      : 'application/octet-stream';
+  const isAbort = (err: unknown) => (err as { name?: string })?.name === 'AbortError';
+
+  // 1. Web Share API with file (mobile + desktop Chromium)
+  try {
+    const file = new File([blob], filename, { type: mime });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+  } catch (err) {
+    if (isAbort(err)) return;
+    // fall through
+  }
+
+  // 2. File System Access API (desktop Chrome/Edge)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const w = window as any;
   if (typeof w.showSaveFilePicker === 'function') {
@@ -37,13 +63,12 @@ async function triggerDownload(blob: Blob, filename: string) {
       await writable.close();
       return;
     } catch (err) {
-      // User dismissed the picker (AbortError) — silently exit.
-      if ((err as { name?: string })?.name === 'AbortError') return;
-      // Anything else: fall through to the anchor fallback.
+      if (isAbort(err)) return;
+      // fall through
     }
   }
 
-  // Fallback: octet-stream + anchor click.
+  // 3. Anchor-click fallback (octet-stream forces save instead of inline render).
   const dl = new Blob([blob], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(dl);
   const a = document.createElement('a');
