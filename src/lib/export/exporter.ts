@@ -12,12 +12,38 @@ function download(filename: string, content: string, mime: string) {
 }
 
 // Centralised download trigger.
-// - NO target="_blank": in standalone PWA mode it triggers a navigate the SW
-//   intercepts via navigateFallback, hanging the app.
-// - We re-wrap the blob with application/octet-stream so the browser must
-//   download (never render inline). Inline PDF/HTML rendering inside the PWA
-//   window is what was making the app feel "frozen" after a download.
-function triggerDownload(blob: Blob, filename: string) {
+// Two paths:
+// 1) File System Access API (Chrome/Edge on desktop) — native save dialog,
+//    no blob URL, no anchor click, no SW interception. This is the only
+//    reliable path inside an installed PWA on Windows; the anchor-click
+//    method makes the app appear "frozen" after the download.
+// 2) Fallback anchor click for browsers without the API (Firefox/Safari).
+//    Re-wrap the blob as application/octet-stream so the browser cannot
+//    try to render it inline.
+async function triggerDownload(blob: Blob, filename: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w = window as any;
+  if (typeof w.showSaveFilePicker === 'function') {
+    try {
+      const isPdf = filename.toLowerCase().endsWith('.pdf');
+      const handle = await w.showSaveFilePicker({
+        suggestedName: filename,
+        types: isPdf
+          ? [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }]
+          : [{ description: 'CSV file', accept: { 'text/csv': ['.csv'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (err) {
+      // User dismissed the picker (AbortError) — silently exit.
+      if ((err as { name?: string })?.name === 'AbortError') return;
+      // Anything else: fall through to the anchor fallback.
+    }
+  }
+
+  // Fallback: octet-stream + anchor click.
   const dl = new Blob([blob], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(dl);
   const a = document.createElement('a');
