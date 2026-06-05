@@ -16,11 +16,21 @@ import { Link } from 'react-router-dom';
 import type { Spend, Category, SharedLoan } from '@/types';
 import type { Investment, InvestmentType } from '@/types';
 
-function getThisMonthRange() {
+// Indian financial year: Apr 1 → Mar 31.
+// If today is Jan/Feb/Mar, the FY started in April of the previous calendar year.
+function getThisFinancialYearRange() {
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  return { from, to };
+  const y = now.getFullYear();
+  const startYear = now.getMonth() < 3 ? y - 1 : y;  // months are 0-indexed: Jan=0, Mar=2, Apr=3
+  const from = new Date(startYear, 3, 1);                // Apr 1
+  const to = new Date(startYear + 1, 2, 31, 23, 59, 59); // Mar 31 next year
+  return { from, to, startYear };
+}
+
+function fyLabel(startYear: number) {
+  const a = String(startYear).slice(-2);
+  const b = String(startYear + 1).slice(-2);
+  return `FY ${a}-${b}`;
 }
 
 
@@ -28,7 +38,7 @@ export default function Dashboard() {
   const { workspace } = useWorkspace();
   const { internalId } = useAuth();
 
-  const [monthSpends, setMonthSpends] = useState<Spend[] | null>(null);
+  const [fySpends, setFySpends] = useState<Spend[] | null>(null);
   const [recentSpends, setRecentSpends] = useState<Spend[] | null>(null);
   const [catMap, setCatMap] = useState<Map<string, Category>>(new Map());
   const [loansGiven, setLoansGiven] = useState<SharedLoan[]>([]);
@@ -47,8 +57,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!wsId) return;
-    const { from, to } = getThisMonthRange();
-    return subscribeSpends(wsId, { dateFrom: from, dateTo: to }, setMonthSpends);
+    const { from, to } = getThisFinancialYearRange();
+    return subscribeSpends(wsId, { dateFrom: from, dateTo: to }, setFySpends);
   }, [wsId]);
 
   useEffect(() => {
@@ -82,8 +92,20 @@ export default function Dashboard() {
     return () => { u1(); u2(); };
   }, [wsId]);
 
+  const fy = getThisFinancialYearRange();
+  const fyTotal = fySpends?.reduce((sum, s) => sum + s.amount, 0) ?? 0;
+  // Derive current-month subset client-side from the FY data — saves a second subscription.
+  const monthSpends = useMemo(() => {
+    if (!fySpends) return null;
+    const now = new Date();
+    const m = now.getMonth(), y = now.getFullYear();
+    return fySpends.filter((s) => {
+      const d = s.date.toDate();
+      return d.getMonth() === m && d.getFullYear() === y;
+    });
+  }, [fySpends]);
   const monthTotal = monthSpends?.reduce((sum, s) => sum + s.amount, 0) ?? 0;
-  const loading = monthSpends === null || recentSpends === null;
+  const loading = fySpends === null || recentSpends === null;
   const loansGivenOutstanding = loansGiven.filter((l) => l.status !== 'settled' && l.status !== 'closed' && l.status !== 'disputed').reduce((s, l) => s + l.outstandingAmount, 0);
   const loansReceivedOutstanding = loansReceived.filter((l) => l.status !== 'settled' && l.status !== 'closed' && l.status !== 'disputed').reduce((s, l) => s + l.outstandingAmount, 0);
   const pendingCount = loansReceived.filter((l) => l.status === 'unconfirmed').length;
@@ -105,8 +127,8 @@ export default function Dashboard() {
   }, [investments, typeMap]);
 
   const stats = [
-    { label: format(new Date(), 'MMM yyyy'), sublabel: 'Total spent', value: loading ? null : formatINR(monthTotal) },
-    { label: 'This month', sublabel: 'Transactions', value: loading ? null : String(monthSpends?.length ?? 0) },
+    { label: fyLabel(fy.startYear), sublabel: 'Total spent', value: loading ? null : formatINR(fyTotal) },
+    { label: format(new Date(), 'MMM yyyy'), sublabel: 'This month', value: loading ? null : formatINR(monthTotal) },
     { label: 'Loans given', sublabel: 'Outstanding', value: formatINR(loansGivenOutstanding) },
     { label: 'Loans taken', sublabel: 'Outstanding', value: formatINR(loansReceivedOutstanding) },
   ];

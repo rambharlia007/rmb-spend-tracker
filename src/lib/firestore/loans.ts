@@ -117,11 +117,41 @@ export async function disputeLoan(loanId: string) {
 }
 
 // --- Settle loan (giver marks as fully settled) ---
-export async function settleLoan(loanId: string) {
-  await updateDoc(doc(db, 'sharedLoans', loanId), {
-    status: 'settled',
-    outstandingAmount: 0,
-    updatedAt: serverTimestamp(),
+// Writes a repayment for the remaining outstanding on the given date so the
+// settlement shows up in the ledger as a dated transaction, then marks the loan settled.
+export async function settleLoan(
+  loanId: string,
+  myInternalId: string,
+  opts: { date: Date; notes?: string }
+) {
+  const me = auth.currentUser;
+  if (!me) throw new Error('Not signed in');
+
+  const loanRef = doc(db, 'sharedLoans', loanId);
+  const repRef = doc(collection(db, 'sharedLoans', loanId, 'repayments'));
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(loanRef);
+    if (!snap.exists()) throw new Error('Loan not found');
+    const loan = snap.data() as Omit<SharedLoan, 'id'>;
+    const remaining = Math.max(0, loan.outstandingAmount);
+    const note = opts.notes?.trim() || 'Marked settled';
+
+    if (remaining > 0) {
+      tx.set(repRef, {
+        amount: remaining,
+        date: Timestamp.fromDate(opts.date),
+        notes: note,
+        paidByInternalId: myInternalId,
+        confirmedByGiver: true,
+        createdAt: serverTimestamp(),
+      });
+    }
+    tx.update(loanRef, {
+      status: 'settled' as LoanStatus,
+      outstandingAmount: 0,
+      updatedAt: serverTimestamp(),
+    });
   });
 }
 

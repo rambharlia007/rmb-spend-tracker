@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
@@ -51,6 +51,9 @@ export default function LoansTaken() {
   const [repTarget, setRepTarget] = useState<SharedLoan | null>(null);
   const [repSaving, setRepSaving] = useState(false);
   const [repForm, setRepForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+
+  // Filter loans by giver (empty = all)
+  const [filterKey, setFilterKey] = useState<string>('');
 
   useEffect(() => {
     if (!internalId) return;
@@ -155,8 +158,24 @@ export default function LoansTaken() {
   }
 
   const isTerminal = (l: SharedLoan) => l.status === 'settled' || l.status === 'closed' || l.status === 'disputed';
-  const activeLoans = loans?.filter((l) => !isTerminal(l)) ?? [];
-  const closedLoans = loans?.filter((l) => isTerminal(l)) ?? [];
+  const loanKey = (l: SharedLoan) => l.giverInternalId ?? `email:${l.giverEmail.toLowerCase()}`;
+
+  // Unique givers across all loans (for the filter dropdown)
+  const givers = useMemo(() => {
+    if (!loans) return [];
+    const seen = new Map<string, string>();
+    for (const l of loans) {
+      const k = loanKey(l);
+      if (!seen.has(k)) seen.set(k, l.giverName || l.giverEmail);
+    }
+    return Array.from(seen.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [loans]);
+
+  const filteredLoans = (loans ?? []).filter((l) => !filterKey || loanKey(l) === filterKey);
+  const activeLoans = filteredLoans.filter((l) => !isTerminal(l));
+  const closedLoans = filteredLoans.filter((l) => isTerminal(l));
   const totalOutstanding = activeLoans.reduce((s, l) => s + l.outstandingAmount, 0);
   const pendingConfirmation = activeLoans.filter((l) => l.status === 'unconfirmed');
 
@@ -185,6 +204,26 @@ export default function LoansTaken() {
         <EmptyState icon={ArrowDownToLine} title="No loans taken" description="Record a loan you took, or when someone records one for you it'll appear here." />
       ) : (
         <>
+          {givers.length > 1 && (
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground shrink-0">Filter by</Label>
+              <Select value={filterKey || '__all'} onValueChange={(v) => setFilterKey(v === '__all' ? '' : v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all">All lenders ({givers.length})</SelectItem>
+                  {givers.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filterKey && (
+                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setFilterKey('')}>Clear</Button>
+              )}
+            </div>
+          )}
+          {filteredLoans.length === 0 && (
+            <EmptyState icon={ArrowDownToLine} title="No matching loans" description="No loans found from this person." />
+          )}
           {activeLoans.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-2">

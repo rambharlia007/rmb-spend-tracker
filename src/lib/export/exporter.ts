@@ -8,16 +8,21 @@ import { PRESET_LABELS } from '@/lib/dateRanges';
 
 function download(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
+  triggerDownload(blob, filename);
+}
+
+// Centralised download trigger. NO target="_blank" — in standalone PWA mode the SW's
+// navigateFallback intercepts the new-tab navigation for a blob URL and hangs the app.
+// The download attribute alone is enough; blob: URLs are not intercepted by any router.
+function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
-  a.target = '_blank';   // prevent HashRouter intercepting the click as navigation
   a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  // Delay revoke so browser has time to initiate the download (mobile Safari fix)
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -99,17 +104,7 @@ export function exportSpendsPDF(
 
   // Use blob + anchor instead of doc.save() to avoid jsPDF's internal window.open()
   // which can trigger router navigation and kill all Firestore subscriptions.
-  const pdfBlob = doc.output('blob');
-  const url = URL.createObjectURL(pdfBlob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`;
-  a.target = '_blank';   // prevent HashRouter intercepting the click as navigation
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  triggerDownload(doc.output('blob'), `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
 }
 
 // --- Per-contact loan statement (bank-statement style) ---
@@ -210,16 +205,22 @@ export function generateLoanStatementPDF(opts: {
     doc.text(`Total lent: ${formatINR(totalLent)}   Total borrowed: ${formatINR(totalBorrowed)}`, 14, 54);
     doc.setTextColor(0);
 
+    // Explicit widths so amount/balance columns never get squeezed by long descriptions.
+    // A4 portrait usable width ≈ 182mm with 14mm margins. Sum below = 182.
     autoTable(doc, {
       startY: 60,
-      head: [['Date', 'Description', 'Lent (CR)', 'Borrowed (DR)', 'Balance', 'Status']],
+      margin: { left: 14, right: 14 },
+      head: [['Date', 'Description', 'Lent', 'Borrowed', 'Balance', 'Status']],
       body: tableBody,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [15, 23, 42] },
+      styles: { fontSize: 8, cellPadding: 1.8, overflow: 'linebreak', valign: 'top' },
+      headStyles: { fillColor: [15, 23, 42], halign: 'left', fontStyle: 'bold' },
       columnStyles: {
-        2: { halign: 'right' },
-        3: { halign: 'right' },
-        4: { halign: 'right' },
+        0: { cellWidth: 22 },                                  // Date
+        1: { cellWidth: 64, overflow: 'linebreak' },           // Description wraps
+        2: { cellWidth: 24, halign: 'right' },                 // Lent
+        3: { cellWidth: 24, halign: 'right' },                 // Borrowed
+        4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }, // Balance
+        5: { cellWidth: 18, halign: 'center', fontSize: 7 },   // Status
       },
     });
 
@@ -235,16 +236,6 @@ export function generateLoanStatementPDF(opts: {
     doc.setFont('helvetica', 'normal');
   }
 
-  const pdfBlob = doc.output('blob');
-  const url = URL.createObjectURL(pdfBlob);
-  const a = document.createElement('a');
-  a.href = url;
   const safeName = (contactName || contactEmail).replace(/[^a-z0-9]/gi, '_');
-  a.download = `loan-statement-${safeName}-${format(now, 'yyyyMMdd')}.pdf`;
-  a.target = '_blank';
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  triggerDownload(doc.output('blob'), `loan-statement-${safeName}-${format(now, 'yyyyMMdd')}.pdf`);
 }

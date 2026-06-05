@@ -27,6 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { Contact, SharedLoan } from '@/types';
 import { Users, UserPlus, Check, X, Trash2, ArrowRightLeft, FileDown, Pencil } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
 import { formatINR } from '@/lib/utils';
@@ -47,6 +48,7 @@ type NetBalance = {
 export default function Contacts() {
   const { user, internalId } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [invites, setInvites] = useState<ContactInvite[] | null>(null);
@@ -320,10 +322,14 @@ export default function Contacts() {
               return (
                 <div key={c.id} className="px-4 py-3 bg-card">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
+                    <button
+                      onClick={() => navigate(`/contact/${c.id}`)}
+                      className="min-w-0 text-left flex-1 hover:underline underline-offset-2 decoration-muted-foreground/50"
+                      title="View statement"
+                    >
                       <div className="text-sm font-medium truncate">{c.displayName || c.email}</div>
                       <div className="text-xs text-muted-foreground truncate">{c.email}</div>
-                    </div>
+                    </button>
                     <div className="flex items-center gap-2 shrink-0">
                       <StatusBadge status={c.status} />
                       {bal?.canSettle && (

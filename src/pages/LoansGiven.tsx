@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useAuth } from '@/hooks/useAuth';
@@ -21,7 +21,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { HandCoins, Plus, CreditCard } from 'lucide-react';
 import type { SharedLoan, Contact, PaymentSource } from '@/types';
 import { useNavigate } from 'react-router-dom';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const STATUS_COLORS: Record<string, string> = {
   unconfirmed: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30',
@@ -44,11 +43,15 @@ export default function LoansGiven() {
   const [saving, setSaving] = useState(false);
   const [settleTarget, setSettleTarget] = useState<SharedLoan | null>(null);
   const [settling, setSettling] = useState(false);
+  const [settleForm, setSettleForm] = useState({ date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
 
   // Quick repayment received
   const [repTarget, setRepTarget] = useState<SharedLoan | null>(null);
   const [repSaving, setRepSaving] = useState(false);
   const [repForm, setRepForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+
+  // Filter loans by recipient (empty = all)
+  const [filterKey, setFilterKey] = useState<string>('');
 
   const [form, setForm] = useState({
     receiverContactId: '',
@@ -116,17 +119,21 @@ export default function LoansGiven() {
   }
 
   async function handleSettle() {
-    if (!settleTarget) return;
+    if (!settleTarget || !internalId) return;
     setSettling(true);
     try {
-      await settleLoan(settleTarget.id);
+      await settleLoan(settleTarget.id, internalId, {
+        date: new Date(settleForm.date + 'T00:00:00'),
+        notes: settleForm.notes,
+      });
       toast('Loan marked as settled', 'success');
+      setSettleTarget(null);
+      setSettleForm({ date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
     } catch (e: unknown) {
       logError('LoansGiven.settleLoan', e);
       toast(friendlyError(e), 'error');
     } finally {
       setSettling(false);
-      setSettleTarget(null);
     }
   }
 
@@ -157,8 +164,24 @@ export default function LoansGiven() {
   }
 
   const isTerminal = (l: SharedLoan) => l.status === 'settled' || l.status === 'closed' || l.status === 'disputed';
-  const activeLoans = loans?.filter((l) => !isTerminal(l)) ?? [];
-  const closedLoans = loans?.filter((l) => isTerminal(l)) ?? [];
+  const loanKey = (l: SharedLoan) => l.receiverInternalId ?? `email:${l.receiverEmail.toLowerCase()}`;
+
+  // Unique recipients across all loans (for the filter dropdown)
+  const recipients = useMemo(() => {
+    if (!loans) return [];
+    const seen = new Map<string, string>();
+    for (const l of loans) {
+      const k = loanKey(l);
+      if (!seen.has(k)) seen.set(k, l.receiverName || l.receiverEmail);
+    }
+    return Array.from(seen.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [loans]);
+
+  const filteredLoans = (loans ?? []).filter((l) => !filterKey || loanKey(l) === filterKey);
+  const activeLoans = filteredLoans.filter((l) => !isTerminal(l));
+  const closedLoans = filteredLoans.filter((l) => isTerminal(l));
   const totalOutstanding = activeLoans.reduce((s, l) => s + l.outstandingAmount, 0);
 
   return (
@@ -179,13 +202,33 @@ export default function LoansGiven() {
         <EmptyState icon={HandCoins} title="No loans given" description="Record money you lent using the button above." />
       ) : (
         <>
+          {recipients.length > 1 && (
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground shrink-0">Filter by</Label>
+              <Select value={filterKey || '__all'} onValueChange={(v) => setFilterKey(v === '__all' ? '' : v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all">All recipients ({recipients.length})</SelectItem>
+                  {recipients.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filterKey && (
+                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setFilterKey('')}>Clear</Button>
+              )}
+            </div>
+          )}
+          {filteredLoans.length === 0 && (
+            <EmptyState icon={HandCoins} title="No matching loans" description="No loans found for this person." />
+          )}
           {activeLoans.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold">Outstanding</h2>
                 <span className="text-sm font-semibold tabular-nums">{formatINR(totalOutstanding)}</span>
               </div>
-              <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} onSettle={(l) => setSettleTarget(l)} onReceived={(l) => { setRepTarget(l); setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' }); }} />
+              <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} onSettle={(l) => { setSettleTarget(l); setSettleForm({ date: format(new Date(), 'yyyy-MM-dd'), notes: '' }); }} onReceived={(l) => { setRepTarget(l); setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' }); }} />
             </section>
           )}
           {closedLoans.length > 0 && (
@@ -197,14 +240,32 @@ export default function LoansGiven() {
         </>
       )}
 
-      <ConfirmDialog
-        open={!!settleTarget}
-        onOpenChange={(o) => { if (!o) setSettleTarget(null); }}
-        title="Settle loan"
-        description={`Mark this loan to ${settleTarget?.receiverName || settleTarget?.receiverEmail} as fully settled?`}
-        confirmLabel={settling ? 'Settling…' : 'Settle'}
-        onConfirm={handleSettle}
-      />
+      {/* Settle loan dialog */}
+      {settleTarget && (
+        <Dialog open onOpenChange={(o) => { if (!o && !settling) setSettleTarget(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader><DialogTitle>Settle loan</DialogTitle></DialogHeader>
+            <div className="space-y-1 pb-1 text-sm text-muted-foreground">
+              Mark loan to <span className="font-medium text-foreground">{settleTarget.receiverName || settleTarget.receiverEmail}</span> as fully settled.
+              {' '}Outstanding: <span className="font-medium text-foreground">{formatINR(settleTarget.outstandingAmount)}</span>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Settled on *</Label>
+                <Input type="date" value={settleForm.date} onChange={(e) => setSettleForm((f) => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Notes (optional)</Label>
+                <Input placeholder="e.g. Cash handed over" value={settleForm.notes} onChange={(e) => setSettleForm((f) => ({ ...f, notes: e.target.value }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setSettleTarget(null)} disabled={settling}>Cancel</Button>
+              <Button size="sm" onClick={handleSettle} disabled={settling}>{settling ? 'Settling…' : 'Settle'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* New loan dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

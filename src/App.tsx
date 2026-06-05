@@ -13,6 +13,7 @@ import Contacts from '@/pages/Contacts';
 import LoansGiven from '@/pages/LoansGiven';
 import LoansTaken from '@/pages/LoansTaken';
 import LoanDetail from '@/pages/LoanDetail';
+import ContactStatement from '@/pages/ContactStatement';
 import WorkspaceSettings from '@/pages/WorkspaceSettings';
 import ProfileSettings from '@/pages/ProfileSettings';
 import BackupSettings from '@/pages/BackupSettings';
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/loans-taken" element={<LoansTaken />} />
             <Route path="/loan/:id" element={<LoanDetail />} />
             <Route path="/contacts" element={<Contacts />} />
+            <Route path="/contact/:contactId" element={<ContactStatement />} />
             <Route path="/notes" element={<Notes />} />
             <Route path="/investments" element={<Investments />} />
             <Route path="/investment-types" element={<InvestmentTypes />} />
