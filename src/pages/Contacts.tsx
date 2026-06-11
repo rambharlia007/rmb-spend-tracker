@@ -205,21 +205,27 @@ export default function Contacts() {
     }
   }
 
-  function handleDownloadStatement() {
+  async function handleDownloadStatement() {
     if (!statementTarget || !user) return;
     const refId = statementTarget.refUserId;
     const given = refId ? loansGiven.filter((l) => l.receiverInternalId === refId) : [];
     const taken = refId ? loansReceived.filter((l) => l.giverInternalId === refId) : [];
-    generateLoanStatementPDF({
-      myName: user.displayName || user.email || 'Me',
-      contactName: statementTarget.displayName || statementTarget.email,
-      contactEmail: statementTarget.email,
-      givenLoans: given,
-      takenLoans: taken,
-      fromDate: stmtFrom ? new Date(stmtFrom + 'T00:00:00') : null,
-      toDate: stmtTo ? new Date(stmtTo + 'T23:59:59') : null,
-    });
+    const target = statementTarget;
     setStatementTarget(null);
+    try {
+      await generateLoanStatementPDF({
+        myName: user.displayName || user.email || 'Me',
+        contactName: target.displayName || target.email,
+        contactEmail: target.email,
+        givenLoans: given,
+        takenLoans: taken,
+        fromDate: stmtFrom ? new Date(stmtFrom + 'T00:00:00') : null,
+        toDate: stmtTo ? new Date(stmtTo + 'T23:59:59') : null,
+      });
+    } catch (e: unknown) {
+      logError('Contacts.downloadStatement', e);
+      toast(friendlyError(e), 'error');
+    }
   }
 
   async function handleEditSave() {
@@ -319,25 +325,35 @@ export default function Contacts() {
           <div className="divide-y rounded-lg border overflow-hidden">
             {contacts.map((c) => {
               const bal = getNetBalance(c);
+              // Whole row navigates to the contact statement. Action buttons
+              // stopPropagation so taps on them don't double-fire navigation,
+              // and the row stays reliably tappable even when many actions
+              // squeeze the previous name-only tap target.
+              const openStatement = () => navigate(`/contact/${c.id}`);
+              const stop = (e: React.MouseEvent) => e.stopPropagation();
               return (
-                <div key={c.id} className="px-4 py-3 bg-card">
+                <div
+                  key={c.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={openStatement}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStatement(); } }}
+                  className="px-4 py-3 bg-card cursor-pointer hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title="View statement"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => navigate(`/contact/${c.id}`)}
-                      className="min-w-0 text-left flex-1 hover:underline underline-offset-2 decoration-muted-foreground/50"
-                      title="View statement"
-                    >
+                    <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium truncate">{c.displayName || c.email}</div>
                       <div className="text-xs text-muted-foreground truncate">{c.email}</div>
-                    </button>
-                    <div className="flex items-center gap-2 shrink-0">
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0" onClick={stop}>
                       <StatusBadge status={c.status} />
                       {bal?.canSettle && (
                         <Button
                           size="sm"
                           variant="outline"
                           className="text-xs gap-1"
-                          onClick={() => setSettleTarget({ contact: c, balance: bal })}
+                          onClick={(e) => { e.stopPropagation(); setSettleTarget({ contact: c, balance: bal }); }}
                         >
                           <ArrowRightLeft className="h-3 w-3" /> Settle
                         </Button>
@@ -346,7 +362,7 @@ export default function Contacts() {
                         size="icon"
                         variant="ghost"
                         title="Download statement"
-                        onClick={() => setStatementTarget(c)}
+                        onClick={(e) => { e.stopPropagation(); setStatementTarget(c); }}
                       >
                         <FileDown className="h-3.5 w-3.5" />
                       </Button>
@@ -355,12 +371,12 @@ export default function Contacts() {
                           size="icon"
                           variant="ghost"
                           title="Edit contact"
-                          onClick={() => { setEditTarget(c); setEditEmail(c.email); setEditName(c.displayName); }}
+                          onClick={(e) => { e.stopPropagation(); setEditTarget(c); setEditEmail(c.email); setEditName(c.displayName); }}
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      <Button size="icon" variant="ghost" onClick={() => setDeleteTarget(c)}>
+                      <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>

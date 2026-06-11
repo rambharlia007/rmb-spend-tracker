@@ -6,26 +6,42 @@ import { formatINRForPDF } from '@/lib/utils';
 import type { FilterState } from '@/components/FilterBar';
 import { PRESET_LABELS } from '@/lib/dateRanges';
 
-function download(filename: string, content: string, mime: string) {
+async function download(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
-  triggerDownload(blob, filename);
+  await triggerDownload(blob, filename);
 }
 
-// Centralised download trigger. Tries three paths in order; each one bypasses
-// the anchor-click + blob-URL combo that hangs the app on PWA standalone mode
-// (service worker intercepts the navigate event, or the browser tries to
-// render the blob inline).
+// Mobile = touch-coarse pointer OR mobile-keyword UA. Used to gate the
+// anchor-click fallback, which on Android Chrome PWA opens the system browser
+// (the SW navigate fallback for blob: URLs cannot save reliably in standalone
+// scope). On mobile we either share via OS share sheet or throw — never spawn
+// an out-of-app navigation.
+function isMobileDevice() {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) return true;
+  return false;
+}
+
+class DownloadFailedError extends Error {
+  constructor(msg: string) { super(msg); this.name = 'DownloadFailedError'; }
+}
+
+// Centralised download trigger. Tries paths in order, gated on device class:
 //
-// 1) Web Share API with a File — best for MOBILE (iOS Safari, Android Chrome,
-//    and their PWA shells). Opens the OS share sheet; user picks "Save to
-//    Files" / Drive / Mail / WhatsApp / whatever. No blob URL navigation.
-// 2) File System Access API — best for DESKTOP Chrome/Edge (incl. installed
-//    PWA on Windows/macOS). Opens the native save dialog; writes to disk.
-// 3) Anchor click with octet-stream MIME — fallback for Firefox/Safari
-//    desktop, plus anything else that lacks the first two.
+//   MOBILE  → Web Share API only. If share fails (non-Abort), THROW. We do
+//             not fall through to anchor-click because that opens the system
+//             browser from a PWA standalone window, which:
+//             (a) looks like the app "redirected to browser" on 2nd attempt
+//             (b) backgrounds the PWA and can stall Firestore listeners
+//             Caller surfaces the error via toast and asks the user to retry.
 //
-// Both 1 and 2 must be invoked under user activation (a click handler) — the
-// preceding sync PDF generation must finish well under 5s for that to hold.
+//   DESKTOP → Web Share (Chromium with files) → File System Access (Chrome/
+//             Edge save dialog) → anchor-click fallback (Firefox/Safari).
+//
+// Web Share + File System Access both need user activation; PDF generation is
+// sync via jsPDF so the gesture is still live when triggerDownload runs.
 async function triggerDownload(blob: Blob, filename: string) {
   const mime = filename.toLowerCase().endsWith('.pdf')
     ? 'application/pdf'
@@ -33,17 +49,37 @@ async function triggerDownload(blob: Blob, filename: string) {
       ? 'text/csv'
       : 'application/octet-stream';
   const isAbort = (err: unknown) => (err as { name?: string })?.name === 'AbortError';
+  const mobile = isMobileDevice();
 
-  // 1. Web Share API with file (mobile + desktop Chromium)
+  // 1. Web Share API with file
+  let shareTried = false;
   try {
     const file = new File([blob], filename, { type: mime });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      shareTried = true;
       await navigator.share({ files: [file], title: filename });
       return;
     }
   } catch (err) {
-    if (isAbort(err)) return;
-    // fall through
+    if (isAbort(err)) return;   // user dismissed the share sheet — leave them be
+    console.warn('[download] Web Share failed:', err);
+    if (mobile) {
+      throw new DownloadFailedError(
+        'Could not save the file. Tap the download button again, or try from a desktop browser.'
+      );
+    }
+    // desktop: fall through to next strategy
+  }
+
+  // Mobile path stops here. If share wasn't supported at all (very rare on
+  // a touch device — most modern mobile browsers support it), tell the user.
+  if (mobile) {
+    if (!shareTried) {
+      throw new DownloadFailedError(
+        'This browser cannot save the file directly. Try the latest Chrome or Safari.'
+      );
+    }
+    return;
   }
 
   // 2. File System Access API (desktop Chrome/Edge)
@@ -64,7 +100,8 @@ async function triggerDownload(blob: Blob, filename: string) {
       return;
     } catch (err) {
       if (isAbort(err)) return;
-      // fall through
+      console.warn('[download] File System Access failed:', err);
+      // fall through to anchor-click (desktop only)
     }
   }
 
@@ -81,7 +118,7 @@ async function triggerDownload(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-export function exportSpendsCSV(
+export async function exportSpendsCSV(
   spends: Spend[],
   catMap: Map<string, Category>,
   srcMap: Map<string, PaymentSource>
@@ -97,10 +134,10 @@ export function exportSpendsCSV(
   const csv = [header, ...rows]
     .map((r) => r.map((c) => `"${c}"`).join(','))
     .join('\n');
-  download(`spends-${format(new Date(), 'yyyyMMdd-HHmm')}.csv`, csv, 'text/csv');
+  await download(`spends-${format(new Date(), 'yyyyMMdd-HHmm')}.csv`, csv, 'text/csv');
 }
 
-export function exportSpendsPDF(
+export async function exportSpendsPDF(
   spends: Spend[],
   catMap: Map<string, Category>,
   srcMap: Map<string, PaymentSource>,
@@ -148,7 +185,7 @@ export function exportSpendsPDF(
     doc.setFontSize(11);
     doc.setTextColor(80);
     doc.text('No spends found for the selected period.', margin, 56);
-    triggerDownload(doc.output('blob'), `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
+    await triggerDownload(doc.output('blob'), `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
     return;
   }
 
@@ -289,13 +326,13 @@ export function exportSpendsPDF(
   doc.setTextColor(140);
   doc.text('All amounts in INR.', margin, finalY + 21);
 
-  triggerDownload(doc.output('blob'), `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
+  await triggerDownload(doc.output('blob'), `spends-${format(now, 'yyyyMMdd-HHmm')}.pdf`);
 }
 
 // --- Per-contact loan statement (bank-statement style) ---
 // Shows all loans given + taken with a running balance, sorted by date.
 // Credit = they owe me (I lent them), Debit = I owe them (they lent me).
-export function generateLoanStatementPDF(opts: {
+export async function generateLoanStatementPDF(opts: {
   myName: string;
   contactName: string;
   contactEmail: string;
@@ -508,5 +545,5 @@ export function generateLoanStatementPDF(opts: {
   }
 
   const safeName = (contactName || contactEmail).replace(/[^a-z0-9]/gi, '_');
-  triggerDownload(doc.output('blob'), `loan-statement-${safeName}-${format(now, 'yyyyMMdd')}.pdf`);
+  await triggerDownload(doc.output('blob'), `loan-statement-${safeName}-${format(now, 'yyyyMMdd')}.pdf`);
 }

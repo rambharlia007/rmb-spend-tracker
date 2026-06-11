@@ -92,10 +92,16 @@ export default function Spends() {
           <p className="text-sm text-muted-foreground">{filtered.length} entries · {formatINR(total)}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => exportSpendsCSV(filtered, catMap, srcMap)} disabled={filtered.length === 0}>
+          <Button variant="outline" size="sm" onClick={async () => {
+            try { await exportSpendsCSV(filtered, catMap, srcMap); }
+            catch (e: unknown) { logError('Spends.exportCSV', e); toast(friendlyError(e), 'error'); }
+          }} disabled={filtered.length === 0}>
             <FileDown className="h-4 w-4" /> CSV
           </Button>
-          <Button variant="outline" size="sm" onClick={() => exportSpendsPDF(filtered, catMap, srcMap, workspace?.name ?? '', filters)} disabled={filtered.length === 0}>
+          <Button variant="outline" size="sm" onClick={async () => {
+            try { await exportSpendsPDF(filtered, catMap, srcMap, workspace?.name ?? '', filters); }
+            catch (e: unknown) { logError('Spends.exportPDF', e); toast(friendlyError(e), 'error'); }
+          }} disabled={filtered.length === 0}>
             <FileDown className="h-4 w-4" /> PDF
           </Button>
           <Button onClick={() => { setEditing(null); setFormOpen(true); }}><Plus className="h-4 w-4" /> Add</Button>

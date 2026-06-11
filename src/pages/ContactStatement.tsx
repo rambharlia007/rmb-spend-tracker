@@ -4,6 +4,9 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
+import { friendlyError } from '@/lib/errorMessages';
+import { logError } from '@/lib/logger';
 import { subscribeLoansGiven, subscribeLoansReceived, subscribeRepayments, type Repayment } from '@/lib/firestore/loans';
 import { generateLoanStatementPDF } from '@/lib/export/exporter';
 import { Button } from '@/components/ui/button';
@@ -37,6 +40,7 @@ export default function ContactStatement() {
   const { contactId } = useParams<{ contactId: string }>();
   const { internalId, user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [contact, setContact] = useState<Contact | null | 'loading'>('loading');
   const [loansGiven, setLoansGiven] = useState<SharedLoan[]>([]);
@@ -211,17 +215,22 @@ export default function ContactStatement() {
     };
   }, [contactLoans, repaymentsByLoan]);
 
-  function handleDownloadPDF() {
+  async function handleDownloadPDF() {
     if (!contact || contact === 'loading' || !user) return;
-    generateLoanStatementPDF({
-      myName: user.displayName || user.email || 'Me',
-      contactName: contact.displayName || contact.email,
-      contactEmail: contact.email,
-      givenLoans: contactLoans.given,
-      takenLoans: contactLoans.taken,
-      fromDate: null,
-      toDate: null,
-    });
+    try {
+      await generateLoanStatementPDF({
+        myName: user.displayName || user.email || 'Me',
+        contactName: contact.displayName || contact.email,
+        contactEmail: contact.email,
+        givenLoans: contactLoans.given,
+        takenLoans: contactLoans.taken,
+        fromDate: null,
+        toDate: null,
+      });
+    } catch (e: unknown) {
+      logError('ContactStatement.downloadPDF', e);
+      toast(friendlyError(e), 'error');
+    }
   }
 
   if (contact === 'loading') {

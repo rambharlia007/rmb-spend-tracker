@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import { subscribeLoansGiven, createLoan, settleLoan, addRepayment } from '@/lib/firestore/loans';
+import { subscribeLoansGiven, createLoan, settleLoan, addRepayment, bulkSettleAmount } from '@/lib/firestore/loans';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
 import { subscribeContacts } from '@/lib/firestore/contacts';
@@ -49,6 +49,11 @@ export default function LoansGiven() {
   const [repTarget, setRepTarget] = useState<SharedLoan | null>(null);
   const [repSaving, setRepSaving] = useState(false);
   const [repForm, setRepForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+
+  // Bulk settle (partial amount across one recipient's active loans)
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkForm, setBulkForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
 
   // Filter loans by recipient (empty = all)
   const [filterKey, setFilterKey] = useState<string>('');
@@ -184,6 +189,42 @@ export default function LoansGiven() {
   const closedLoans = filteredLoans.filter((l) => isTerminal(l));
   const totalOutstanding = activeLoans.reduce((s, l) => s + l.outstandingAmount, 0);
 
+  // Bulk-settle is only meaningful against ONE recipient. Enable it when:
+  // - user has filtered to a single recipient, OR
+  // - all active loans happen to belong to the same recipient
+  const activeRecipientKeys = useMemo(
+    () => new Set(activeLoans.map(loanKey)),
+    [activeLoans]
+  );
+  const canBulkSettle = activeLoans.length >= 1 && activeRecipientKeys.size === 1;
+  const bulkRecipientName = activeLoans[0]?.receiverName || activeLoans[0]?.receiverEmail || '';
+
+  async function handleBulkSettle() {
+    if (!internalId) return;
+    const amt = Math.round(parseFloat(bulkForm.amount) * 100) / 100;
+    if (isNaN(amt) || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
+    if (amt > totalOutstanding) {
+      toast(`Amount exceeds total outstanding of ${formatINR(totalOutstanding)}`, 'error');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const applied = await bulkSettleAmount(activeLoans, internalId, {
+        amount: amt,
+        date: new Date(bulkForm.date + 'T00:00:00'),
+        notes: bulkForm.notes,
+      });
+      toast(`Settled ${formatINR(applied)} across ${activeLoans.length} loan${activeLoans.length > 1 ? 's' : ''}`, 'success');
+      setBulkOpen(false);
+      setBulkForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+    } catch (e: unknown) {
+      logError('LoansGiven.bulkSettle', e);
+      toast(friendlyError(e), 'error');
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <header className="flex items-center justify-between">
@@ -224,9 +265,22 @@ export default function LoansGiven() {
           )}
           {activeLoans.length > 0 && (
             <section>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 gap-2">
                 <h2 className="text-sm font-semibold">Outstanding</h2>
-                <span className="text-sm font-semibold tabular-nums">{formatINR(totalOutstanding)}</span>
+                <div className="flex items-center gap-2">
+                  {canBulkSettle && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs gap-1"
+                      onClick={() => setBulkOpen(true)}
+                      title={`Settle a partial amount across ${activeLoans.length} loan${activeLoans.length > 1 ? 's' : ''} with ${bulkRecipientName}`}
+                    >
+                      <CreditCard className="h-3 w-3" /> Settle amount
+                    </Button>
+                  )}
+                  <span className="text-sm font-semibold tabular-nums">{formatINR(totalOutstanding)}</span>
+                </div>
               </div>
               <LoanList loans={activeLoans} onSelect={(id) => navigate(`/loan/${id}`)} onSettle={(l) => { setSettleTarget(l); setSettleForm({ date: format(new Date(), 'yyyy-MM-dd'), notes: '' }); }} onReceived={(l) => { setRepTarget(l); setRepForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' }); }} />
             </section>
@@ -317,6 +371,43 @@ export default function LoansGiven() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Bulk settle (partial amount across recipient's active loans) */}
+      <Dialog open={bulkOpen} onOpenChange={(o) => { if (!o && !bulkSaving) setBulkOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Settle amount</DialogTitle></DialogHeader>
+          <div className="space-y-1 pb-1 text-sm text-muted-foreground">
+            Apply a payment from <span className="font-medium text-foreground">{bulkRecipientName}</span> across {activeLoans.length} active loan{activeLoans.length > 1 ? 's' : ''}.
+            {' '}Total outstanding: <span className="font-medium text-foreground">{formatINR(totalOutstanding)}</span>
+          </div>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Amount (₹) *</Label>
+              <Input
+                type="number"
+                inputMode="decimal"
+                min={1}
+                placeholder="0.00"
+                value={bulkForm.amount}
+                onChange={(e) => setBulkForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Applied oldest-loan first. Loans fully covered are marked settled.</p>
+            </div>
+            <div className="space-y-1">
+              <Label>Date *</Label>
+              <Input type="date" value={bulkForm.date} onChange={(e) => setBulkForm((f) => ({ ...f, date: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Notes (optional)</Label>
+              <Input placeholder="e.g. UPI lump sum" value={bulkForm.notes} onChange={(e) => setBulkForm((f) => ({ ...f, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(false)} disabled={bulkSaving}>Cancel</Button>
+            <Button size="sm" onClick={handleBulkSettle} disabled={bulkSaving}>{bulkSaving ? 'Settling…' : 'Settle'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Repayment received dialog */}
       {repTarget && (
         <Dialog open onOpenChange={(o) => { if (!o) setRepTarget(null); }}>

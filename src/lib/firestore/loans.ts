@@ -231,6 +231,66 @@ export async function createLoanTaken(data: {
   return ref.id;
 }
 
+// --- Settle a fixed amount across multiple loans (FIFO: oldest first) ---
+// User enters an amount; we apply it to the recipient's active loans starting
+// with the oldest. Loans fully covered flip to 'settled'; the last partially
+// covered loan keeps its status with reduced outstanding. Each touched loan
+// gets a repayment sub-doc so the ledger reflects the bulk action.
+//
+// Returns the actual amount applied (may be less than requested if the total
+// outstanding is smaller than the requested amount).
+export async function bulkSettleAmount(
+  activeLoans: SharedLoan[],  // active loans against ONE recipient (caller filters)
+  myInternalId: string,
+  opts: { amount: number; date: Date; notes?: string }
+): Promise<number> {
+  if (!auth.currentUser) throw new Error('Not signed in');
+  if (opts.amount <= 0) throw new Error('Amount must be greater than zero');
+  if (activeLoans.length === 0) throw new Error('No active loans to settle');
+
+  // Oldest first — date ascending. Falls back to createdAt if dates tie.
+  const sorted = [...activeLoans].sort((a, b) => {
+    const da = a.date.toMillis();
+    const db_ = b.date.toMillis();
+    if (da !== db_) return da - db_;
+    return a.createdAt.toMillis() - b.createdAt.toMillis();
+  });
+
+  const dateStr = format(opts.date, 'dd MMM yyyy');
+  const baseNote = opts.notes?.trim() || `Bulk settled on ${dateStr}`;
+
+  const batch = writeBatch(db);
+  let remaining = Math.round(opts.amount * 100) / 100;
+  let applied = 0;
+
+  for (const loan of sorted) {
+    if (remaining <= 0) break;
+    const reduce = Math.min(loan.outstandingAmount, remaining);
+    const newOutstanding = Math.round((loan.outstandingAmount - reduce) * 100) / 100;
+    remaining = Math.round((remaining - reduce) * 100) / 100;
+    applied = Math.round((applied + reduce) * 100) / 100;
+
+    const fullySettled = newOutstanding === 0 && loan.status === 'accepted';
+    batch.update(doc(db, 'sharedLoans', loan.id), {
+      outstandingAmount: newOutstanding,
+      status: fullySettled ? ('settled' as LoanStatus) : loan.status,
+      updatedAt: serverTimestamp(),
+    });
+    const repRef = doc(collection(db, 'sharedLoans', loan.id, 'repayments'));
+    batch.set(repRef, {
+      amount: reduce,
+      date: Timestamp.fromDate(opts.date),
+      notes: baseNote,
+      paidByInternalId: myInternalId,
+      confirmedByGiver: true,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
+  return applied;
+}
+
 // --- Net settlement between two parties ---
 // Given loans I gave to person X, and loans X gave me:
 // - Marks all loans on the smaller side as settled
