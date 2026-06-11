@@ -531,7 +531,7 @@ export default function Contacts() {
                     <> {formatINR(Math.abs(settleTarget.balance.net))} remains outstanding.</>
                   )}
                 </p>
-                <p className="pt-1">Settlement notes will be added to each loan automatically.</p>
+                <p className="pt-1">Each affected loan will be tagged <span className="font-medium text-foreground">“System settled”</span> in its notes so you can tell it apart from manual repayments later.</p>
               </div>
             </div>
             <DialogFooter>

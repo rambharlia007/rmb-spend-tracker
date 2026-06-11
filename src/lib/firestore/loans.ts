@@ -303,8 +303,11 @@ export async function netSettleLoans(
   if (!auth.currentUser) throw new Error('Not signed in');
 
   const dateStr = format(new Date(), 'dd MMM yyyy');
-  const settlementNote = `Net settled on ${dateStr}`;
-  const partialNote = (amt: number) => `Partially net settled on ${dateStr} (₹${amt.toLocaleString('en-IN')} offset)`;
+  // Prefix every net-settle note with "System settled" so it is visually
+  // distinguishable from manual repayments and bulk lump-sum settlements
+  // when scanning the loan statement or ledger.
+  const settlementNote = `System settled · net offset on ${dateStr}`;
+  const partialNote = (amt: number) => `System settled · partial offset of ₹${amt.toLocaleString('en-IN')} on ${dateStr}`;
 
   const givenTotal = givenLoans.reduce((s, l) => s + l.outstandingAmount, 0);
   const takenTotal = takenLoans.reduce((s, l) => s + l.outstandingAmount, 0);
