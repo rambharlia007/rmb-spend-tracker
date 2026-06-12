@@ -7,13 +7,16 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
-import { subscribeLoansGiven, subscribeLoansReceived, subscribeRepayments, type Repayment } from '@/lib/firestore/loans';
+import { subscribeLoansGiven, subscribeLoansReceived, subscribeRepayments, bulkSettleAmount, netSettleLoans, type Repayment } from '@/lib/firestore/loans';
 import { generateLoanStatementPDF } from '@/lib/export/exporter';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatINR } from '@/lib/utils';
-import { ArrowLeft, FileDown } from 'lucide-react';
+import { ArrowLeft, FileDown, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft } from 'lucide-react';
 import type { Contact, SharedLoan } from '@/types';
 
 type LedgerEntry = {
@@ -215,6 +218,68 @@ export default function ContactStatement() {
     };
   }, [contactLoans, repaymentsByLoan]);
 
+  // --- Active loan partitioning for the action buttons ---
+  const ACTIVE = new Set<SharedLoan['status']>(['unconfirmed', 'accepted']);
+  const activeGiven = useMemo(() => contactLoans.given.filter((l) => ACTIVE.has(l.status)), [contactLoans.given]);
+  const activeTaken = useMemo(() => contactLoans.taken.filter((l) => ACTIVE.has(l.status)), [contactLoans.taken]);
+  const givenOutstanding = activeGiven.reduce((s, l) => s + l.outstandingAmount, 0);
+  const takenOutstanding = activeTaken.reduce((s, l) => s + l.outstandingAmount, 0);
+  const canNetSettle = givenOutstanding > 0 && takenOutstanding > 0;
+
+  // --- Dialog state ---
+  type Direction = 'received' | 'paid';
+  const [payOpen, setPayOpen] = useState<Direction | null>(null);
+  const [paySaving, setPaySaving] = useState(false);
+  const [payForm, setPayForm] = useState({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+  const [netOpen, setNetOpen] = useState(false);
+  const [netSaving, setNetSaving] = useState(false);
+
+  function openPayDialog(direction: Direction) {
+    setPayForm({ amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+    setPayOpen(direction);
+  }
+
+  async function handlePaySubmit() {
+    if (!payOpen || !internalId) return;
+    const amt = Math.round(parseFloat(payForm.amount) * 100) / 100;
+    if (isNaN(amt) || amt <= 0) { toast('Enter a valid amount', 'error'); return; }
+    const targetLoans = payOpen === 'received' ? activeGiven : activeTaken;
+    const cap = payOpen === 'received' ? givenOutstanding : takenOutstanding;
+    if (amt > cap) {
+      toast(`Amount exceeds outstanding of ${formatINR(cap)}`, 'error');
+      return;
+    }
+    setPaySaving(true);
+    try {
+      const applied = await bulkSettleAmount(targetLoans, internalId, {
+        amount: amt,
+        date: new Date(payForm.date + 'T00:00:00'),
+        notes: payForm.notes,
+      });
+      toast(`Recorded ${formatINR(applied)} across ${targetLoans.length} loan${targetLoans.length > 1 ? 's' : ''}`, 'success');
+      setPayOpen(null);
+    } catch (e: unknown) {
+      logError('ContactStatement.bulkSettle', e);
+      toast(friendlyError(e), 'error');
+    } finally {
+      setPaySaving(false);
+    }
+  }
+
+  async function handleNetSettle() {
+    setNetSaving(true);
+    try {
+      await netSettleLoans(activeGiven, activeTaken);
+      toast('Balances net settled', 'success');
+      setNetOpen(false);
+    } catch (e: unknown) {
+      logError('ContactStatement.netSettle', e);
+      toast(friendlyError(e), 'error');
+    } finally {
+      setNetSaving(false);
+    }
+  }
+
   async function handleDownloadPDF() {
     if (!contact || contact === 'loading' || !user) return;
     try {
@@ -280,6 +345,26 @@ export default function ContactStatement() {
           <Summary label="Total borrowed" value={totals.totalBorrowed} />
           <Summary label="Paid back" value={totals.totalPaidBack} />
         </div>
+
+        {(givenOutstanding > 0 || takenOutstanding > 0) && (
+          <div className="border-t pt-3 flex flex-wrap gap-2">
+            {givenOutstanding > 0 && (
+              <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayDialog('received')}>
+                <ArrowDownToLine className="h-3.5 w-3.5" /> Received payment
+              </Button>
+            )}
+            {takenOutstanding > 0 && (
+              <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayDialog('paid')}>
+                <ArrowUpFromLine className="h-3.5 w-3.5" /> Paid payment
+              </Button>
+            )}
+            {canNetSettle && (
+              <Button size="sm" variant="outline" className="gap-1" onClick={() => setNetOpen(true)}>
+                <ArrowRightLeft className="h-3.5 w-3.5" /> Net settle
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Ledger */}
@@ -339,6 +424,91 @@ export default function ContactStatement() {
             DR = they owe you · CR = you owe them. Tap a row to open the loan.
           </p>
         </section>
+      )}
+
+      {/* Payment dialog (received OR paid) */}
+      {payOpen && (
+        <Dialog open onOpenChange={(o) => { if (!o && !paySaving) setPayOpen(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{payOpen === 'received' ? 'Received payment' : 'Paid payment'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-1 pb-1 text-sm text-muted-foreground">
+              {payOpen === 'received'
+                ? <>From <span className="font-medium text-foreground">{contact.displayName || contact.email}</span></>
+                : <>To <span className="font-medium text-foreground">{contact.displayName || contact.email}</span></>
+              }
+              {' · '}
+              Outstanding: <span className="font-medium text-foreground">
+                {formatINR(payOpen === 'received' ? givenOutstanding : takenOutstanding)}
+              </span>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Amount (₹) *</Label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={1}
+                  placeholder="0.00"
+                  value={payForm.amount}
+                  onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">Applied oldest-loan first. Fully covered loans are marked settled.</p>
+              </div>
+              <div className="space-y-1">
+                <Label>Date *</Label>
+                <Input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Notes (optional)</Label>
+                <Input
+                  placeholder={payOpen === 'received' ? 'e.g. Received via UPI' : 'e.g. Paid via UPI'}
+                  value={payForm.notes}
+                  onChange={(e) => setPayForm((f) => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setPayOpen(null)} disabled={paySaving}>Cancel</Button>
+              <Button size="sm" onClick={handlePaySubmit} disabled={paySaving}>{paySaving ? 'Saving…' : 'Record'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Net settle dialog */}
+      {netOpen && (
+        <Dialog open onOpenChange={(o) => { if (!o && !netSaving) setNetOpen(false); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Net settle with {contact.displayName || contact.email}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              <div className="rounded-lg bg-muted/50 p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">You lent them</span>
+                  <span className="font-semibold text-green-600">{formatINR(givenOutstanding)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">They lent you</span>
+                  <span className="font-semibold text-red-500">{formatINR(takenOutstanding)}</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-semibold">
+                  <span>Offset amount</span>
+                  <span>{formatINR(Math.min(givenOutstanding, takenOutstanding))}</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Each affected loan will be tagged <span className="font-medium text-foreground">“System settled”</span> in its notes so you can tell auto-offsets apart from manual repayments later.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button size="sm" variant="outline" onClick={() => setNetOpen(false)} disabled={netSaving}>Cancel</Button>
+              <Button size="sm" onClick={handleNetSettle} disabled={netSaving}>{netSaving ? 'Settling…' : 'Confirm'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

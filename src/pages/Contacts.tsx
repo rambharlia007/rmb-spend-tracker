@@ -14,7 +14,6 @@ import {
 import {
   subscribeLoansGiven,
   subscribeLoansReceived,
-  netSettleLoans,
 } from '@/lib/firestore/loans';
 import { generateLoanStatementPDF } from '@/lib/export/exporter';
 import { EmptyState } from '@/components/EmptyState';
@@ -26,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { Contact, SharedLoan } from '@/types';
-import { Users, UserPlus, Check, X, Trash2, ArrowRightLeft, FileDown, Pencil } from 'lucide-react';
+import { Users, UserPlus, Check, X, Trash2, FileDown, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { friendlyError } from '@/lib/errorMessages';
 import { logError } from '@/lib/logger';
@@ -40,9 +39,6 @@ type NetBalance = {
   theyOweMe: number;   // sum of my active loans given to them
   IOweТhem: number;    // sum of active loans they gave me
   net: number;         // theyOweMe - IOweТhem (positive = they owe me)
-  givenLoans: SharedLoan[];
-  takenLoans: SharedLoan[];
-  canSettle: boolean;  // true only when both sides > 0 (netting is possible)
 };
 
 export default function Contacts() {
@@ -59,10 +55,6 @@ export default function Contacts() {
   const [adding, setAdding] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
-
-  // Settlement dialog state
-  const [settleTarget, setSettleTarget] = useState<{ contact: Contact; balance: NetBalance } | null>(null);
-  const [settling, setSettling] = useState(false);
 
   // Statement dialog state
   const [statementTarget, setStatementTarget] = useState<Contact | null>(null);
@@ -115,9 +107,6 @@ export default function Contacts() {
       theyOweMe,
       IOweТhem,
       net: theyOweMe - IOweТhem,
-      givenLoans: given,
-      takenLoans: taken,
-      canSettle: theyOweMe > 0 && IOweТhem > 0,
     };
   }
 
@@ -187,21 +176,6 @@ export default function Contacts() {
       toast(friendlyError(e), 'error');
     } finally {
       setDeleteTarget(null);
-    }
-  }
-
-  async function handleSettle() {
-    if (!settleTarget) return;
-    setSettling(true);
-    try {
-      await netSettleLoans(settleTarget.balance.givenLoans, settleTarget.balance.takenLoans);
-      toast(`Settled with ${settleTarget.contact.displayName || settleTarget.contact.email}`, 'success');
-      setSettleTarget(null);
-    } catch (e: unknown) {
-      logError('Contacts.netSettle', e);
-      toast(friendlyError(e), 'error');
-    } finally {
-      setSettling(false);
     }
   }
 
@@ -348,16 +322,6 @@ export default function Contacts() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0" onClick={stop}>
                       <StatusBadge status={c.status} />
-                      {bal?.canSettle && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs gap-1"
-                          onClick={(e) => { e.stopPropagation(); setSettleTarget({ contact: c, balance: bal }); }}
-                        >
-                          <ArrowRightLeft className="h-3 w-3" /> Settle
-                        </Button>
-                      )}
                       <Button
                         size="icon"
                         variant="ghost"
@@ -394,7 +358,7 @@ export default function Contacts() {
                           You owe them {formatINR(bal.IOweТhem)}
                         </span>
                       )}
-                      {bal.net !== 0 && bal.canSettle && (
+                      {bal.theyOweMe > 0 && bal.IOweТhem > 0 && bal.net !== 0 && (
                         <span className="text-xs text-muted-foreground">
                           · Net: {bal.net > 0 ? `they owe you ${formatINR(bal.net)}` : `you owe them ${formatINR(Math.abs(bal.net))}`}
                         </span>
@@ -481,68 +445,6 @@ export default function Contacts() {
         </Dialog>
       )}
 
-      {/* Net settlement dialog */}
-      {settleTarget && (
-        <Dialog open onOpenChange={(o) => { if (!o && !settling) setSettleTarget(null); }}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Settle with {settleTarget.contact.displayName || settleTarget.contact.email}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 text-sm">
-              <div className="rounded-lg bg-muted/50 p-3 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">You lent them</span>
-                  <span className="font-semibold text-green-600">{formatINR(settleTarget.balance.theyOweMe)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">They lent you</span>
-                  <span className="font-semibold text-red-500">{formatINR(settleTarget.balance.IOweТhem)}</span>
-                </div>
-                <div className="border-t pt-2 flex justify-between font-semibold">
-                  <span>Net outstanding</span>
-                  <span className={settleTarget.balance.net >= 0 ? 'text-green-600' : 'text-red-500'}>
-                    {settleTarget.balance.net >= 0
-                      ? `They owe you ${formatINR(settleTarget.balance.net)}`
-                      : `You owe them ${formatINR(Math.abs(settleTarget.balance.net))}`}
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-1 text-muted-foreground text-xs">
-                <p>
-                  <strong className="text-foreground">
-                    {settleTarget.balance.theyOweMe <= settleTarget.balance.IOweТhem
-                      ? `${settleTarget.balance.givenLoans.length} loan${settleTarget.balance.givenLoans.length > 1 ? 's' : ''} you gave`
-                      : `${settleTarget.balance.takenLoans.length} loan${settleTarget.balance.takenLoans.length > 1 ? 's' : ''} they gave`
-                    }
-                  </strong>
-                  {' '}will be marked fully settled.
-                </p>
-                <p>
-                  <strong className="text-foreground">
-                    {settleTarget.balance.theyOweMe <= settleTarget.balance.IOweТhem
-                      ? `${settleTarget.balance.takenLoans.length} loan${settleTarget.balance.takenLoans.length > 1 ? 's' : ''} they gave`
-                      : `${settleTarget.balance.givenLoans.length} loan${settleTarget.balance.givenLoans.length > 1 ? 's' : ''} you gave`
-                    }
-                  </strong>
-                  {' '}will be reduced by {
-                    formatINR(Math.min(settleTarget.balance.theyOweMe, settleTarget.balance.IOweТhem))
-                  }.
-                  {settleTarget.balance.net !== 0 && (
-                    <> {formatINR(Math.abs(settleTarget.balance.net))} remains outstanding.</>
-                  )}
-                </p>
-                <p className="pt-1">Each affected loan will be tagged <span className="font-medium text-foreground">“System settled”</span> in its notes so you can tell it apart from manual repayments later.</p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button size="sm" variant="outline" onClick={() => setSettleTarget(null)} disabled={settling}>Cancel</Button>
-              <Button size="sm" onClick={handleSettle} disabled={settling}>
-                {settling ? 'Settling…' : 'Confirm Settle'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }
